@@ -38,6 +38,8 @@ async def main():
         check("the headline shades into the accent", await page.evaluate("getComputedStyle(document.querySelector('.home-hero h1')).backgroundImage.includes('gradient')"))
         check("with no example calendar the link to one is hidden", await page.evaluate("document.getElementById('heroDemo').classList.contains('hidden') && document.getElementById('footDemo').classList.contains('hidden')"))
         check("nothing on the page claims a made-up number", "Sent to 12" not in await page.content())
+        lede = await page.text_content(".band-hero .lede")
+        check("the lede names all three views rather than calling it weekly", "weekly" not in lede and "by day, week or month" in lede, lede)
         check("the hero rises in, in steps", await page.evaluate("document.querySelectorAll('.band-hero .hero-in').length") == 4
               and await page.evaluate("getComputedStyle(document.querySelector('.home-hero h1')).animationName") == "rise"
               and await page.evaluate("document.querySelector('.home-cta').style.getPropertyValue('--d')") == "240ms")
@@ -75,6 +77,7 @@ async def main():
         await page.select_option("#langSelect", "es"); await page.wait_for_timeout(300)
         texts = await page.evaluate("[...document.querySelectorAll('#homeChips span')].map(s => s.textContent)")
         check("a language change reaches every copy", texts[0] == "Tutores" and len(set(texts)) == 6 and texts[0] == texts[6] == texts[30], str(texts[:8]))
+        check("and the lede in Spanish names the three views too", "por día, semana o mes" in await page.text_content(".band-hero .lede"))
         check("cards lift under the pointer", (await page.evaluate("getComputedStyle(document.querySelector('.home-step')).transitionProperty")).startswith("transform"))
 
         # ---- Everything included: one feature open at a time, its scene on the stage

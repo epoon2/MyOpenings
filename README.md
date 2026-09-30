@@ -1,6 +1,6 @@
 # MyOpenings
 
-A weekly calendar of open and booked time at a link of your own, for tutors, teachers and anyone who takes bookings. Runs completely on Netlify. The frontend is static, the API uses Netlify Functions, and events are stored in Netlify Blobs.
+A calendar of open and booked time at a link of your own - by day, week or month - for tutors, teachers and anyone who takes bookings. Runs completely on Netlify. The frontend is static, the API uses Netlify Functions, and events are stored in Netlify Blobs.
 
 ## Deploy
 
