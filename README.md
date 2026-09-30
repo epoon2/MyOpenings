@@ -1,6 +1,6 @@
-# Tutoring Availability Portal for Netlify
+# MyOpenings
 
-This version runs completely on Netlify. The frontend is static, the API uses Netlify Functions, and events are stored in Netlify Blobs.
+A weekly calendar of open and booked time at a link of your own, for tutors, teachers and anyone who takes bookings. Runs completely on Netlify. The frontend is static, the API uses Netlify Functions, and events are stored in Netlify Blobs.
 
 ## Deploy
 
@@ -31,7 +31,7 @@ In Netlify, change the project/site name. Your URL will be:
 
 For example:
 
-`https://ethan-tutoring.netlify.app`
+`https://myopenings.netlify.app`
 
 The exact name must be available.
 
@@ -41,7 +41,7 @@ The exact name must be available.
 - Private titles and notes are never returned by the public API.
 - Public pages refresh automatically every 30 seconds.
 - Events can be added, edited, deleted, and dragged on the weekly desktop calendar.
-- Data is stored in the site-wide `tutoring-availability` Netlify Blob store.
+- Data is stored in the site-wide `tutoring-availability` Netlify Blob store. The store's name is an internal key from before the site was called MyOpenings; renaming it would orphan every account and calendar, so it stays.
 
 ## Important
 Do not put the admin password into `app.js`, `index.html`, GitHub, or `netlify.toml`. Keep it only in Netlify's environment variables.

@@ -2805,10 +2805,12 @@ function describeWait(
 
 
 /*
-  What the site calls itself in emails and on the home page: SITE_NAME
-  if set, else MyOpenings.
+  What the site calls itself, in emails and on every page: MyOpenings.
+  Fixed here on purpose - Netlify sets an environment variable called
+  SITE_NAME to the site's own Netlify name ("ethan-calendar"), and
+  reading any variable for this let that leak onto the page.
 */
-const DEFAULT_SITE_NAME =
+const SITE_NAME =
   "MyOpenings";
 
 /*
@@ -2827,7 +2829,7 @@ async function demoSlug(
 }
 
 function siteName() {
-  return process.env.SITE_NAME || DEFAULT_SITE_NAME;
+  return SITE_NAME;
 }
 
 

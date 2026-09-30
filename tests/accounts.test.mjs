@@ -7,7 +7,8 @@ import crypto from 'node:crypto';
 import { getStore } from '@netlify/blobs';
 
 process.env.ADMIN_PASSWORD = 'admin-pw';
-process.env.SITE_NAME = 'Test Calendar';
+// Netlify sets SITE_NAME to the site's Netlify name; the code must not read it.
+process.env.SITE_NAME = 'ethan-calendar';
 process.env.MASTER_EMAIL = 'ethan@example.com';   // the account that claims the first calendar below   // else the host would be read as "Site Test"
 
 // a fake Brevo that keeps every message, and a fake Google that keeps
@@ -91,7 +92,7 @@ ok('sign-up creates the account and a session', r.status === 201 && typeof r.dat
 ok('the calendar address comes from the name', r.data.account.slug === 'maya-chen' && r.data.account.url === 'http://site.test/maya-chen');
 ok('and is not confirmed yet', r.data.account.verified === false && r.data.verification === 'sent');
 const maya = r.data.token;
-ok('a confirmation email went out', sent.length === 1 && sent[0].to === 'maya@example.com' && /Confirm/.test(sent[0].subject) && sent[0].sender.name === 'Test Calendar', JSON.stringify(sent[0]));
+ok('a confirmation email went out', sent.length === 1 && sent[0].to === 'maya@example.com' && /Confirm/.test(sent[0].subject) && sent[0].sender.name === 'MyOpenings', JSON.stringify(sent[0]));
 const verifyLink = linkIn(sent[0]);
 ok('with a link to the home page carrying a code', verifyLink && verifyLink.startsWith('http://site.test/?verify='), verifyLink);
 
@@ -288,7 +289,7 @@ ok("another account's calendar never falls back to the site's Google calendar - 
 
 // the example calendar: whatever sits at /demo, once something does
 r = await call('GET', '/site');
-ok('the site names itself and, with no calendar at /demo, points at no example', r.data.name === 'Test Calendar' && r.data.demo === null, JSON.stringify(r.data));
+ok('the site calls itself MyOpenings whatever Netlify calls it, and with no calendar at /demo points at no example', r.data.name === 'MyOpenings' && r.data.demo === null, JSON.stringify(r.data));
 r = await call('PUT', '/settings?calendar=maya', { 'x-session': mayaNow }, { slug: 'demo' });
 ok('an address can be demo', r.status === 200 && r.data.slug === 'demo');
 r = await call('GET', '/site');
