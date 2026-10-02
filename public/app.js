@@ -5425,7 +5425,8 @@
                 startMin,
                 endMin,
                 startHour,
-                endHour
+                endHour,
+                dateStr
               );
 
 
@@ -5545,7 +5546,8 @@
     segmentStartMin,
     segmentEndMin,
     startHour,
-    endHour
+    endHour,
+    dateStr
   ) {
 
     const visibleStart =
@@ -5702,6 +5704,22 @@
       titleElement,
       timeElement
     );
+    /*
+      The details are built the first time a pointer arrives, not
+      for every card on every render: most are never opened.
+    */
+    card.addEventListener(
+      'mouseenter',
+      () => {
+        card.appendChild(
+          eventDetails(
+            event,
+            dateStr
+          )
+        );
+      },
+      { once: true }
+    );
     if ( event.overlay ) {
       card.classList.add( 'overlay' );
       card.dataset.calendar =
@@ -5753,6 +5771,14 @@
       card.addEventListener(
         'dragstart',
         (dragEvent) => {
+
+          /*
+            A card in hand gives up its grown-under-the-pointer
+            shape, or it would catch the drop itself.
+          */
+
+          card.classList.add( 'dragging' );
+
 
           state.draggingId =
             original.masterId ||
@@ -5828,6 +5854,8 @@
       card.addEventListener(
         'dragend',
         () => {
+
+          card.classList.remove( 'dragging' );
 
           removeDragGhost();
 
@@ -5987,6 +6015,201 @@
         localDateTimeToMinuteKey( item.start ) <= start &&
         localDateTimeToMinuteKey( item.end ) >= end
     ) || getOriginalEvent( event );
+  }
+
+
+  /*
+    What a card shows once it has grown under the pointer, the way a
+    calendar app opens a session up: the full date (the time is on
+    the card already), and for the owner the repeat rule, the
+    category and the notes. A visitor's events carry none of those,
+    so a visitor sees the date alone. The block is added the first
+    time a pointer arrives, and the stylesheet shows it only while
+    the pointer rests.
+  */
+
+  function eventDetails(
+    event,
+    dateStr
+  ) {
+
+    const box =
+      document.createElement( 'div' );
+
+    box.className =
+      'event-details';
+
+
+    const line = (className, text) => {
+
+      if ( !text ) {
+        return;
+      }
+
+      const row =
+        document.createElement( 'div' );
+
+      row.className =
+        'event-detail ' + className;
+
+      row.textContent =
+        text;
+
+      box.appendChild( row );
+
+    };
+
+
+    line(
+      'event-detail-when',
+      describeDay( dateStr )
+    );
+
+
+    if ( state.isAdmin ) {
+
+      line(
+        'event-detail-repeat',
+        describeRule( event.recurrence )
+      );
+
+      const category =
+        event.category === OMITTED
+          ? t( 'summary_omitted' )
+          : categoryName( event.category );
+
+      line(
+        'event-detail-category',
+        category
+          ? t( 'hover_category', { name: category } )
+          : ''
+      );
+
+      line(
+        'event-detail-notes',
+        String( event.notes || '' ).trim()
+      );
+
+    }
+
+
+    return box;
+
+  }
+
+
+  /*
+    "Tuesday, October 6", in the visitor's language.
+  */
+
+  function describeDay(
+    dateStr
+  ) {
+
+    const match =
+      /^(\d{4})-(\d{2})-(\d{2})/.exec( dateStr || '' );
+
+    if ( !match ) {
+      return '';
+    }
+
+    return new Date(
+      Number( match[1] ),
+      Number( match[2] ) - 1,
+      Number( match[3] )
+    ).toLocaleDateString(
+      I18N.locale(),
+      {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      }
+    );
+
+  }
+
+
+  /*
+    "Repeats weekly on Tue, Thu, until Dec 18, 2026" - the rule in
+    the visitor's words, with the days named by the browser. Nothing
+    for a one-off.
+  */
+
+  function describeRule(
+    recurrence
+  ) {
+
+    if (
+      !recurrence ||
+      !Array.isArray( recurrence.weekdays ) ||
+      !recurrence.weekdays.length
+    ) {
+      return '';
+    }
+
+
+    const sunday =
+      new Date( 2026, 0, 4 );
+
+    const days =
+      recurrence.weekdays
+        .slice()
+        .sort( (a, b) => a - b )
+        .map(
+          (d) =>
+            addDays( sunday, d ).toLocaleDateString(
+              I18N.locale(),
+              { weekday: 'short' }
+            )
+        )
+        .join( ', ' );
+
+
+    let text =
+      recurrence.interval > 1
+        ? t( 'hover_repeats_every', { n: recurrence.interval, days } )
+        : t( 'hover_repeats_weekly', { days } );
+
+
+    if (
+      recurrence.endType === 'ON' &&
+      recurrence.until
+    ) {
+
+      const until =
+        /^(\d{4})-(\d{2})-(\d{2})/.exec( recurrence.until );
+
+      if ( until ) {
+
+        text +=
+          ', ' +
+          t( 'hover_until', {
+            date: new Date(
+              Number( until[1] ),
+              Number( until[2] ) - 1,
+              Number( until[3] )
+            ).toLocaleDateString(
+              I18N.locale(),
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            )
+          } );
+
+      }
+
+    } else if (
+      recurrence.endType === 'COUNT' &&
+      recurrence.count
+    ) {
+
+      text +=
+        ', ' +
+        t( 'hover_times', { n: recurrence.count } );
+
+    }
+
+
+    return text;
+
   }
 
 

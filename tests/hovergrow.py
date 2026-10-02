@@ -3,7 +3,10 @@
 opens up to show the whole title with the time on its own line, lifts
 over its neighbors, and settles back when the pointer leaves. A long
 block never shrinks below its own length. The grid itself does not
-move, and with reduced motion nothing animates.
+move, and with reduced motion nothing animates. The grown card also
+opens its details - the full date, the repeat rule, the category, the
+notes - for the owner, and the date alone for a visitor. A card in
+hand gives the growth up so the drop lands where it is aimed.
 
     python3 tests/hovergrow.py
 """
@@ -42,7 +45,11 @@ async def main():
             const post = (body) => fetch('/api/events', { method: 'POST', headers: {'Content-Type': 'application/json', 'x-admin-password': 't'}, body: JSON.stringify(body) });
             await post({ type: 'BLOCKED', title: 'Maya Chen - Algebra II makeup, chapter 7 review', start: cols[1] + 'T10:00', end: cols[1] + 'T10:15' });
             await post({ type: 'BLOCKED', title: 'Kai - piano', start: cols[1] + 'T10:15', end: cols[1] + 'T11:00' });
-            await post({ type: 'AVAILABLE', title: 'Open', start: cols[3] + 'T13:00', end: cols[3] + 'T15:00' }); }""")
+            await post({ type: 'AVAILABLE', title: 'Open', start: cols[3] + 'T13:00', end: cols[3] + 'T15:00' });
+            await fetch('/api/settings', { method: 'PUT', headers: {'Content-Type': 'application/json', 'x-admin-password': 't'}, body: JSON.stringify({ categories: [{ id: 'tutor', name: 'Private tutoring' }] }) });
+            const dow = new Date(cols[6] + 'T12:00').getDay();
+            await post({ type: 'BLOCKED', title: 'Leo - SAT prep', start: cols[6] + 'T09:00', end: cols[6] + 'T09:30', category: 'tutor', notes: 'Bring the practice test; his dad waits in the lot.',
+                         recurrence: { frequency: 'WEEKLY', interval: 2, weekdays: [dow], endType: 'COUNT', count: 6 } }); }""")
         await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
 
         before = await page.evaluate(MEASURE, "Maya")
@@ -67,6 +74,31 @@ async def main():
         after = await page.evaluate(MEASURE, "Maya")
         check("when the pointer leaves it settles back to its row", abs(after["height"] - before["height"]) < 1 and after["scale"] == "none" and after["z"] == before["z"], str(after))
 
+        # ---- the details: hidden at rest, open under the pointer
+        check("at rest a card carries no details and a visited one hides them", await page.evaluate("[...document.querySelectorAll('.event-details')].every(d => getComputedStyle(d).display === 'none')")
+              and await page.evaluate("[...document.querySelectorAll('.event-card')].filter(c => c.querySelector('.event-details')).length") == 1)
+        await page.hover(".event-card:has-text('Leo')"); await page.wait_for_timeout(350)
+        details = await page.evaluate("[...document.querySelectorAll(\".event-card:hover .event-detail\")].map(d => d.textContent)")
+        day = await page.evaluate("(() => { const c = [...document.querySelectorAll('.day-column')].pop().dataset.date.split('-'); return new Date(+c[0], c[1]-1, +c[2]).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); })()")
+        dow = await page.evaluate("new Date([...document.querySelectorAll('.day-column')].pop().dataset.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short' })")
+        check("the owner sees the full date, the repeat rule, the category and the notes",
+              details == [day, f"Repeats every 2 weeks on {dow}, 6 times", "Category: Private tutoring", "Bring the practice test; his dad waits in the lot."], str(details))
+        leo = await page.evaluate(MEASURE, "Leo")
+        column = await page.evaluate("(() => { const r = [...document.querySelectorAll('.day-column')].pop().getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; })()")
+        check("the grown card stays inside its own column", leo["width"] < column["width"]
+              and await page.evaluate("[...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Leo')).getBoundingClientRect().right") <= column["right"]
+              and await page.evaluate("[...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Leo')).getBoundingClientRect().left") >= column["left"], str((leo["width"], column)))
+        await page.mouse.move(5, 5); await page.wait_for_timeout(350)
+        await page.hover(".event-card:has-text('Maya')"); await page.wait_for_timeout(350)
+        check("a one-off without a category shows the date alone", await page.evaluate("[...document.querySelectorAll('.event-card:hover .event-detail')].map(d => d.className.split(' ')[1])") == ["event-detail-when"])
+        await page.mouse.move(5, 5); await page.wait_for_timeout(350)
+        await page.select_option("#langSelect", "es"); await page.wait_for_timeout(500)
+        await page.hover(".event-card:has-text('Leo')"); await page.wait_for_timeout(350)
+        details = await page.evaluate("[...document.querySelectorAll('.event-card:hover .event-detail')].map(d => d.textContent)")
+        check("in Spanish the details read in Spanish, days included", len(details) == 4 and details[1].startswith("Se repite cada 2 semanas: ") and details[1].endswith(", 6 veces") and details[2] == "Categoría: Private tutoring"
+              and not any(d in details[1] for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")), str(details))
+        await page.mouse.move(5, 5); await page.select_option("#langSelect", "en"); await page.wait_for_timeout(500)
+
         # ---- a long block does not shrink to its text
         await page.hover(".event-card:has-text('Open')"); await page.wait_for_timeout(350)
         long_during = await page.evaluate(MEASURE, "Open")
@@ -79,6 +111,21 @@ async def main():
         check("clicking a grown card opens its editor as before", not await page.evaluate("document.getElementById('eventModal').classList.contains('hidden')")
               and (await page.input_value("#eventTitle")).startswith("Maya Chen"))
         await page.evaluate("document.querySelector('#eventModal [data-close]').click()"); await page.wait_for_timeout(200)
+
+        # ---- a card in hand gives the growth up, and gets it back when let go
+        await page.hover(".event-card:has-text('Maya')"); await page.wait_for_timeout(350)
+        await page.evaluate("""() => [...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Maya'))
+            .dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }))""")
+        await page.wait_for_timeout(350)
+        held = await page.evaluate(MEASURE, "Maya")
+        held_cls = await page.evaluate("[...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Maya')).className")
+        check("a card picked up drops back to its own length while in hand", "dragging" in held_cls and abs(held["height"] - before["height"]) < 1 and held["scale"] == "none", str((held_cls, held)))
+        await page.evaluate("""() => [...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Maya'))
+            .dispatchEvent(new DragEvent('dragend', { bubbles: true }))""")
+        await page.wait_for_timeout(350)
+        check("and is itself again once let go", "dragging" not in await page.evaluate("[...document.querySelectorAll('.event-card')].find(c => c.textContent.includes('Maya')).className")
+              and (await page.evaluate(MEASURE, "Maya"))["scale"] != "none")
+        await page.mouse.move(5, 5); await page.wait_for_timeout(350)
 
         # ---- reduced motion: the growth still happens, nothing animates
         await page.emulate_media(reduced_motion="reduce"); await page.wait_for_timeout(100)
@@ -93,6 +140,8 @@ async def main():
         await visitor.hover(".event-card.blocked"); await visitor.wait_for_timeout(350)
         v_during = await visitor.evaluate("document.querySelector('.event-card.blocked').getBoundingClientRect().height")
         check("a visitor's short card grows under the pointer too", v_during > v_before + 12, str((v_before, v_during)))
+        v_details = await visitor.evaluate("[...document.querySelectorAll('.event-card:hover .event-detail')].map(d => d.className.split(' ')[1] + '=' + d.textContent)")
+        check("and shows the date alone - no rule, category or notes", len(v_details) == 1 and v_details[0].startswith("event-detail-when="), str(v_details))
 
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]
         check("no page errors", not real, str(real[:3]))

@@ -975,12 +975,26 @@ button:disabled {
 
 
 /*
-  Under the pointer a card grows to fit everything it holds - the
-  whole title, the time on its own line - and lifts over its
-  neighbors, so even a fifteen-minute slot can be read in full. It
-  never shrinks below its own length, and it keeps its top edge on
-  its start time. A finger never hovers, so phones and tablets are
-  left out.
+  A card the pointer has visited carries a block of details - the
+  full date, and for the owner the repeat rule, the category and
+  the notes - that shows only while the pointer rests on the card.
+*/
+
+.event-details {
+  display: none;
+}
+
+
+/*
+  Under the pointer a card opens up the way a calendar app opens a
+  session: it grows to fit everything it holds - the whole title,
+  the time on its own line, the details below a rule - comes
+  forward a little, and lifts over its neighbors, so even a
+  fifteen-minute slot can be read in full. It stays inside its own
+  column, never shrinks below its own length, and keeps its top edge
+  on its start time. A card being dragged drops all of this, so the
+  grown card cannot sit under the pointer and catch the drop. A
+  finger never hovers, so phones and tablets are left out.
 */
 
 @media (hover: hover) and (pointer: fine) {
@@ -994,7 +1008,7 @@ button:disabled {
   }
 
 
-  .event-card:hover {
+  .event-card:hover:not(.dragging) {
     z-index: 7;
 
     height: auto;
@@ -1007,12 +1021,12 @@ button:disabled {
   }
 
 
-  .event-card:hover .event-title {
+  .event-card:hover:not(.dragging) .event-title {
     white-space: normal;
   }
 
 
-  .event-card.compact:hover {
+  .event-card.compact:hover:not(.dragging) {
     display: block;
 
     padding-top: 5px;
@@ -1020,8 +1034,49 @@ button:disabled {
   }
 
 
-  .event-card.compact:hover .event-time {
+  .event-card.compact:hover:not(.dragging) .event-time {
     margin-top: 2px;
+  }
+
+
+  .event-card:hover:not(.dragging) .event-details {
+    display: block;
+
+    margin-top: 6px;
+    padding-top: 6px;
+
+    border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+
+    font-size: 11.5px;
+  }
+
+
+  .event-detail {
+    white-space: normal;
+
+    opacity: 0.92;
+  }
+
+
+  .event-detail + .event-detail {
+    margin-top: 3px;
+  }
+
+
+  .event-detail-when {
+    font-weight: 600;
+  }
+
+
+  .event-detail-notes {
+    display: -webkit-box;
+
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+
+    overflow: hidden;
+
+    opacity: 0.8;
   }
 
 }
