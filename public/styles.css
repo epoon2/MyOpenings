@@ -964,6 +964,75 @@ button:disabled {
   line-height: 1.25;
 
   user-select: none;
+
+  /*
+    The script hands over the block's length on the grid; the card
+    is exactly that tall until a pointer rests on it.
+  */
+
+  height: var(--card-height, auto);
+}
+
+
+/*
+  Under the pointer a card grows to fit everything it holds - the
+  whole title, the time on its own line - and lifts over its
+  neighbors, so even a fifteen-minute slot can be read in full. It
+  never shrinks below its own length, and it keeps its top edge on
+  its start time. A finger never hovers, so phones and tablets are
+  left out.
+*/
+
+@media (hover: hover) and (pointer: fine) {
+
+  .event-card {
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease;
+
+    transform-origin: 50% 0;
+  }
+
+
+  .event-card:hover {
+    z-index: 7;
+
+    height: auto;
+
+    min-height: var(--card-height, 0px);
+
+    transform: scale(1.05);
+
+    box-shadow: 0 8px 22px var(--shadow);
+  }
+
+
+  .event-card:hover .event-title {
+    white-space: normal;
+  }
+
+
+  .event-card.compact:hover {
+    display: block;
+
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+
+  .event-card.compact:hover .event-time {
+    margin-top: 2px;
+  }
+
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .event-card {
+    transition: none;
+  }
+
 }
 
 

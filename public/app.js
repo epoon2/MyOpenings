@@ -5639,9 +5639,16 @@
     card.style.top =
       top +
       'px';
-    card.style.height =
+    /*
+      The length goes in as a custom property rather than a height,
+      so the stylesheet can let a card grow under the pointer to show
+      all of its text and still hold it to its own length.
+    */
+    card.style.setProperty(
+      '--card-height',
       height +
-      'px';
+      'px'
+    );
     applyEventColor(
       card,
       event
