@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/watermarks-remover/hook_written_file.py\" --mode check",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/watermarks-remover/hook_written_file.py\" --mode clean",
             "timeout": 30
           }
         ]
