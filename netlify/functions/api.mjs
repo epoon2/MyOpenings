@@ -23,6 +23,36 @@ import {
 } from "./googlesync.mjs";
 
 import {
+  mailConfigured,
+  sendMail,
+  requestNotification,
+  verificationEmail,
+  resetEmail
+} from "./mail.mjs";
+import {
+  VERIFY_HOURS,
+  RESET_HOURS,
+  emailIsValid,
+  normalizeEmail,
+  passwordMatches,
+  passwordProblem,
+  hashPassword,
+  issueSession,
+  readUser,
+  findUserByEmail,
+  writeUser,
+  createUser,
+  userFromRequest,
+  issueToken,
+  consumeToken,
+  clientAddress,
+  rateLimit,
+  slugify,
+  slugIsValid,
+  claimSlug,
+  calendarForSlug
+} from "./accounts.mjs";
+import {
   recordBeforeWrite,
   applyUndo,
   applyRedo,
@@ -79,10 +109,89 @@ const MAX_REQUEST_MINUTES =
   8 * 60;
 
 
+/*
+  CALENDARS
+
+  Every account owns one calendar. The first calendar - the one the
+  site ran with before there were accounts - is "main" and keeps its
+  original storage keys, so nothing already saved moves; every later
+  calendar keeps its records under cal/<id>/. A request names its
+  calendar by slug (?calendar=ethan); with none it means main, which
+  is what older links and the feed expect.
+*/
+
+const MAIN_CALENDAR_ID =
+  "main";
+
+let activeCalendar =
+  { id: MAIN_CALENDAR_ID, slug: null };
+
+/*
+  The signed-in account behind the request's session header, if any.
+*/
+let activeUser =
+  null;
+
+function storageKey(
+  name
+) {
+  return activeCalendar.id === MAIN_CALENDAR_ID
+    ? name
+    : `cal/${ activeCalendar.id }/${ name }`;
+}
+
+function cacheTag() {
+  return activeCalendar.id === MAIN_CALENDAR_ID
+    ? EVENTS_CACHE_TAG
+    : `cal-${ activeCalendar.id }`;
+}
+
+/*
+  Which calendar a request is about. An unknown slug is a 404 for
+  everything but the account routes, which belong to no calendar.
+*/
+async function resolveCalendar(
+  store,
+  slug
+) {
+  if ( !slug ) {
+    return { id: MAIN_CALENDAR_ID, slug: null };
+  }
+  const id =
+    await calendarForSlug( store, slug );
+  if ( id ) {
+    return { id, slug };
+  }
+  /*
+    Main's address is not indexed until someone asks for it, so the
+    first request to /ethan claims it from the display name.
+  */
+  const mainSlug =
+    await ensureMainSlug( store );
+  return mainSlug === slug
+    ? { id: MAIN_CALENDAR_ID, slug }
+    : null;
+}
+
+async function ensureMainSlug(
+  store
+) {
+  const stored =
+    await store.get( SETTINGS_KEY, { type: "json", consistency: "strong" } ) || {};
+  if ( stored.slug ) {
+    return stored.slug;
+  }
+  const wanted =
+    slugify( settingsFrom( stored ).displayName ) || "calendar";
+  const slug =
+    await claimSlug( store, wanted, MAIN_CALENDAR_ID );
+  await store.setJSON( SETTINGS_KEY, { ...stored, slug } );
+  return slug;
+}
+
+
 export default async (req) => {
-
   try {
-
     const url =
       new URL(
         req.url
@@ -97,6 +206,230 @@ export default async (req) => {
       "/";
 
 
+    const store =
+      getStore(
+        STORE_NAME
+      );
+
+
+    /*
+      Who is asking, and about which calendar. The account routes
+      come first: they belong to no calendar and must work even when
+      the address in the query is stale.
+    */
+    activeUser =
+      await userFromRequest(
+        store,
+        req
+      );
+
+
+    if (
+      route === "/site" ||
+      route === "/signup" ||
+      route === "/login" ||
+      route === "/me" ||
+      route === "/verify" ||
+      route === "/resend" ||
+      route === "/forgot" ||
+      route === "/reset" ||
+      route === "/account/password" ||
+      route === "/calendars" ||
+      route.startsWith( "/calendars/" ) ||
+      route === "/admin/accounts"
+    ) {
+      activeCalendar =
+        { id: MAIN_CALENDAR_ID, slug: null };
+      useSettings(
+        await readSettings()
+      );
+      const handled =
+        await handleAccountRoute(
+          req,
+          route,
+          url,
+          store
+        );
+      if ( handled ) {
+        return handled;
+      }
+    }
+
+
+    /*
+      CALENDAR FEED
+
+      /api/feed/<token>/<name>.ics - every booked session as a plain
+      block, for Google Calendar to subscribe to. The token names the
+      calendar as well as opening it, so this runs before the usual
+      calendar lookup.
+
+      The token is the whole secret, so a wrong or absent one is a
+      plain 404 - nothing here says whether the feed exists.
+    */
+
+    if (
+      req.method === "GET" &&
+      route.startsWith(
+        "/feed/"
+      )
+    ) {
+
+      const feedMatch =
+        /^\/feed\/([^/]+)\/[A-Za-z0-9._-]+\.ics$/
+          .exec(
+            route
+          );
+
+
+      const feedCalendar =
+        feedMatch
+          ? await calendarForFeedToken(
+              store,
+              decodeURIComponent(
+                feedMatch[1]
+              )
+            )
+          : null;
+
+
+      if (
+        !feedCalendar
+      ) {
+
+        return json(
+          {
+            error:
+              "Not found."
+          },
+          404
+        );
+
+      }
+
+
+      activeCalendar =
+        feedCalendar;
+
+
+      useSettings(
+        await readSettings()
+      );
+
+
+      const events =
+        await readEvents();
+
+
+      const nowKey =
+        currentMinuteKey();
+
+
+      const expanded =
+        expandEventsForRange(
+          events,
+          nowKey -
+            FEED_WEEKS_BACK *
+            7 *
+            1440,
+          nowKey +
+            FEED_WEEKS_AHEAD *
+            7 *
+            1440
+        );
+
+
+      return new Response(
+        buildIcs(
+          expanded,
+          {
+            timeZone:
+              activeSettings.timezoneId,
+            calendarName:
+              activeSettings.title
+          }
+        ),
+        {
+          status:
+            200,
+
+          headers: {
+            "Cache-Control":
+              "private, no-store",
+
+            "Content-Type":
+              "text/calendar; charset=utf-8",
+
+            "Content-Disposition":
+              'inline; filename="tutoring.ics"'
+          }
+        }
+      );
+
+    }
+
+
+    const calendar =
+      await resolveCalendar(
+        store,
+        (
+          url.searchParams.get( "calendar" ) ||
+          req.headers.get( "x-calendar" ) ||
+          ""
+        ).trim().toLowerCase()
+      );
+
+
+    if (
+      !calendar
+    ) {
+      return json(
+        {
+          error:
+            "There is no calendar at this address.",
+          missing:
+            true
+        },
+        404
+      );
+    }
+
+
+    activeCalendar =
+      calendar;
+
+
+    /*
+      The calendar's settings shape everything below - hours, colours,
+      wording, time zone - so they are read before the route is.
+    */
+    useSettings(
+      await readSettings()
+    );
+
+
+    /*
+      A calendar whose owner has not confirmed their email is not
+      public yet: the owner sees it, nobody else does. The first
+      calendar was live before accounts existed and stays so.
+    */
+    if (
+      activeCalendar.id !== MAIN_CALENDAR_ID &&
+      !activeRecord.live &&
+      !ownsActiveCalendar()
+    ) {
+      return json(
+        {
+          error:
+            "This calendar is not published yet. Its owner still has to confirm their email.",
+          unpublished:
+            true
+        },
+        404
+      );
+    }
+
+
     /*
       GET EVENTS
     */
@@ -109,10 +442,15 @@ export default async (req) => {
       )
     ) {
 
+      /*
+        ?preview=1 asks for the visitor's answer even from the owner,
+        for the Public view switch.
+      */
       const admin =
         hasValidAdminPassword(
           req
-        );
+        ) &&
+        !url.searchParams.get( "preview" );
 
 
       const events =
@@ -214,6 +552,58 @@ export default async (req) => {
         config:
           getConfig(),
 
+        /*
+          The calendar's address, and what became of the session the
+          page sent: "valid" (an account, though maybe not this
+          calendar's owner), "invalid" (expired or signed out
+          everywhere), or nothing when none was sent.
+        */
+        calendar: {
+          slug:
+            await currentSlug( store ),
+          claimed:
+            Boolean( activeRecord.ownerId ) ||
+            activeCalendar.id !== MAIN_CALENDAR_ID,
+          live:
+            activeCalendar.id === MAIN_CALENDAR_ID ||
+            Boolean( activeRecord.live ),
+          owned:
+            ownsActiveCalendar()
+        },
+
+        /*
+          Other calendars of the same owner, drawn over this one when
+          the page asks (?with=slug,slug): each with its events for
+          the range and the colors and words it uses.
+        */
+        ...(
+          admin && url.searchParams.get( "with" )
+            ? {
+                overlays:
+                  await overlayCalendars(
+                    store,
+                    url.searchParams.get( "with" ),
+                    rangeStart,
+                    rangeEnd
+                  )
+              }
+            : {}
+        ),
+
+        session:
+          req.headers.get( "x-session" )
+            ? ( activeUser ? "valid" : "invalid" )
+            : null,
+
+        ...(
+          activeUser
+            ? {
+                account:
+                  await accountSummary( store, activeUser, url.origin )
+              }
+            : {}
+        ),
+
         events:
           admin
             ? ranged
@@ -240,7 +630,11 @@ export default async (req) => {
                 customColors:
                   customColorsOf(
                     await readSettings()
-                  )
+                  ),
+                categories:
+                  activeSettings.categories,
+                mail:
+                  mailStatus()
               }
             : {}
         )
@@ -256,156 +650,172 @@ export default async (req) => {
 
 
     /*
-      CALENDAR FEED
-
-      /api/feed/<token>/tutoring.ics - every booked session as a
-      plain "Tutoring" block, for Google Calendar to subscribe to.
-
-      The token is the whole secret, so a wrong or absent one is a
-      plain 404 - nothing here says whether the feed exists.
+      SETTINGS
+      GET  /settings  the full record (admin only: it holds the
+                      notification address)
+      PUT  /settings  change any of it; the config the page uses comes
+                      back. A time zone change re-pushes every booked
+                      session to Google, since their instants moved.
     */
-
     if (
-      req.method === "GET" &&
-      route.startsWith(
-        "/feed/"
-      )
+      route === "/settings" &&
+      req.method === "GET"
     ) {
-
-      const feedMatch =
-        /^\/feed\/([^/]+)\/tutoring\.ics$/
-          .exec(
-            route
-          );
-
-
-      if (
-        !feedMatch ||
-        !feedTokenIsValid(
-          decodeURIComponent(
-            feedMatch[1]
-          )
-        )
-      ) {
-
-        return json(
-          {
-            error:
-              "Not found."
-          },
-          404
-        );
-
-      }
-
-
-      const events =
-        await readEvents();
-
-
-      const nowKey =
-        currentMinuteKey();
-
-
-      const expanded =
-        expandEventsForRange(
-          events,
-          nowKey -
-            FEED_WEEKS_BACK *
-            7 *
-            1440,
-          nowKey +
-            FEED_WEEKS_AHEAD *
-            7 *
-            1440
-        );
-
-
-      return new Response(
-        buildIcs(
-          expanded
-        ),
-        {
-          status:
-            200,
-
-          headers: {
-            "Cache-Control":
-              "private, no-store",
-
-            "Content-Type":
-              "text/calendar; charset=utf-8",
-
-            "Content-Disposition":
-              'inline; filename="tutoring.ics"'
-          }
-        }
-      );
-
-    }
-
-
-    /*
-      ADMIN LOGIN
-    */
-
-    if (
-      req.method === "POST" &&
-      route === "/login"
-    ) {
-
       requireAdmin(
         req
       );
-
-
-      /*
-        "Keep me signed in": a token the device can hold instead of
-        the password. It is the password's HMAC over an expiry, so it
-        proves nothing on its own, cannot be turned back into the
-        password, and dies for every device the moment the password
-        changes on Netlify.
-      */
-
-      let body =
-        {};
-
-      try {
-        body =
-          await req.json();
-      } catch {
-        body =
-          {};
+      const slug =
+        await currentSlug( store );
+      return json({
+        settings:
+          activeSettings,
+        slug,
+        config:
+          getConfig(),
+        mail:
+          mailStatus(),
+        google:
+          googleStatus(),
+        feed: {
+          url:
+            feedUrlFor( url, await ensureFeedToken( store ), slug )
+        }
+      });
+    }
+    /*
+      POST /settings/testmail - send a test to the notification
+      address, so the setup can be checked without waiting for a
+      request. A success also clears a remembered failure.
+    */
+    if (
+      route === "/settings/testmail" &&
+      req.method === "POST"
+    ) {
+      requireAdmin(
+        req
+      );
+      const to =
+        activeSettings.notificationEmail;
+      if ( !mailConfigured() ) {
+        fail( "Email sending is not set up on the site yet (BREVO_API_KEY and NOTIFY_FROM_EMAIL).", 400 );
       }
-
-
-      const remember =
-        body?.remember === true;
-
-
+      if ( !to ) {
+        fail( "Enter and save a notification email first.", 400 );
+      }
+      /*
+        The test reads like a real notification, with a made-up
+        request in it, so what arrives is what a real one will look
+        like - only the subject line says it is a test.
+      */
+      const sample =
+        sampleRequest();
+      const message =
+        requestNotification({
+          request:
+            sample,
+          config:
+            activeConfig,
+          siteUrl:
+            url.origin + "/"
+        });
+      try {
+        await sendMail({
+          to,
+          fromName:
+            activeConfig.portalTitle,
+          replyTo:
+            sample.email,
+          subject:
+            `[Test] ${ message.subject }`,
+          text:
+            `This is a test from ${ activeConfig.portalTitle }. A real request will look like this:\n\n` + message.text,
+          html:
+            `<p style="color:#6b7280">This is a test from ${ activeConfig.portalTitle.replace( /[&<>]/g, "" ) }. A real request will look like this:</p>` + message.html
+        });
+      } catch ( error ) {
+        await rememberMailOutcome( error );
+        fail( error.message, 502 );
+      }
+      await rememberMailOutcome( null );
       return json({
         ok:
           true,
-
-        ...(
-          remember
-            ? {
-                token:
-                  issueAdminToken(),
-
-                expiresAt:
-                  new Date(
-                    Date.now() +
-                    ADMIN_TOKEN_DAYS * 86400000
-                  ).toISOString()
-              }
-            : {}
-        )
+        to
       });
-
     }
-
-
+    if (
+      route === "/settings" &&
+      req.method === "PUT"
+    ) {
+      requireAdmin(
+        req
+      );
+      const body =
+        await req.json();
+      const stored =
+        await readSettings();
+      const next =
+        validateSettings(
+          body,
+          settingsFrom( stored )
+        );
+      const zoneChanged =
+        next.timezoneId !== activeSettings.timezoneId;
+      const googleChanged =
+        next.googleCalendarId !== activeSettings.googleCalendarId;
+      /*
+        The calendar's address. A change frees the old one; an address
+        someone else holds is refused rather than altered.
+      */
+      let slug =
+        stored.slug || null;
+      if ( "slug" in body ) {
+        const wanted =
+          String( body.slug || "" ).trim().toLowerCase();
+        if ( !slugIsValid( wanted ) ) {
+          bad( "An address is 3 to 30 letters, numbers and dashes, and cannot be a word the site uses itself." );
+        }
+        if ( wanted !== stored.slug ) {
+          const owner =
+            await calendarForSlug( store, wanted );
+          if ( owner && owner !== activeCalendar.id ) {
+            bad( "That address is taken. Please choose another." );
+          }
+          slug =
+            await claimSlug( store, wanted, activeCalendar.id, stored.slug || null );
+        }
+      }
+      await writeSettings({
+        ...stored,
+        ...next,
+        ...( slug ? { slug } : {} )
+      });
+      useSettings({
+        ...stored,
+        ...next,
+        ...( slug ? { slug } : {} )
+      });
+      let sync;
+      if ( zoneChanged || googleChanged ) {
+        sync =
+          await resyncAll(
+            await readEvents(),
+            googleEnv(),
+            { timeZone: activeSettings.timezoneId }
+          );
+      }
+      return json({
+        ok:
+          true,
+        settings:
+          activeSettings,
+        slug:
+          slug || await currentSlug( store ),
+        config:
+          getConfig(),
+        ...( sync ? { sync } : {} )
+      });
+    }
     /*
       CREATE / UPDATE EVENT
     */
@@ -533,6 +943,14 @@ export default async (req) => {
           nextEvent.color =
             stored.color;
         }
+        if ( !( "googleTitle" in incoming ) && stored.googleTitle ) {
+          nextEvent.googleTitle =
+            stored.googleTitle;
+        }
+        if ( !( "category" in incoming ) && stored.category ) {
+          nextEvent.category =
+            stored.category;
+        }
         if (
           nextEvent.recurrence &&
           stored.recurrence &&
@@ -546,6 +964,12 @@ export default async (req) => {
       }
       if ( !nextEvent.color ) {
         delete nextEvent.color;
+      }
+      if ( !nextEvent.googleTitle ) {
+        delete nextEvent.googleTitle;
+      }
+      if ( !nextEvent.category ) {
+        delete nextEvent.category;
       }
       if ( nextEvent.recurrence && nextEvent.recurrence.colorRules && !nextEvent.recurrence.colorRules.length ) {
         delete nextEvent.recurrence.colorRules;
@@ -605,7 +1029,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           before,
-          normalized
+          normalized,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
       await rememberCustomColor(
         nextEvent.color
@@ -627,10 +1053,15 @@ export default async (req) => {
       how a student asks for a slot.
     */
 
-    if (
+        if (
       req.method === "POST" &&
       route === "/requests"
     ) {
+
+      if ( !activeSettings.requests.enabled ) {
+        fail( "This calendar is not taking requests right now.", 403 );
+      }
+
 
       const body =
         await req.json();
@@ -640,6 +1071,21 @@ export default async (req) => {
         validateRequest(
           body
         );
+
+
+      /*
+        Anyone may send a request, so one address cannot send them
+        without end.
+      */
+      const wait =
+        await rateLimit(
+          store,
+          "request",
+          clientAddress( req )
+        );
+      if ( wait ) {
+        fail( `Too many requests from this device. Please try again in ${ describeWait( wait ) }.`, 429 );
+      }
 
 
       const requests =
@@ -652,7 +1098,7 @@ export default async (req) => {
       ) {
 
         fail(
-          "The tutor has too many pending requests right now. Please try again later.",
+          `${ activeSettings.displayName } has too many pending requests right now. Please try again later.`,
           429
         );
 
@@ -662,13 +1108,13 @@ export default async (req) => {
       requests.push(
         incoming
       );
-
-
       await writeRequests(
         requests
       );
-
-
+      await notifyNewRequest(
+        incoming,
+        url.origin + "/"
+      );
       return json(
         {
           id:
@@ -936,7 +1382,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           before,
-          normalized
+          normalized,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
 
 
@@ -1068,7 +1516,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           events,
-          normalized
+          normalized,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
       return json({
         ok:
@@ -1146,7 +1596,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           events,
-          normalized
+          normalized,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
       return json({
         ok:
@@ -1265,7 +1717,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           events,
-          normalized
+          normalized,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
 
 
@@ -1423,7 +1877,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           current,
-          result.events
+          result.events,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
 
 
@@ -1571,7 +2027,9 @@ export default async (req) => {
       const sync =
         await mirrorDifference(
           current,
-          version
+          version,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
 
 
@@ -1679,7 +2137,9 @@ export default async (req) => {
 
       const sync =
         await mirrorSavedEvent(
-          nextEvent
+          nextEvent,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         );
 
 
@@ -1719,7 +2179,9 @@ export default async (req) => {
 
       return json(
         await resyncAll(
-          events
+          events,
+          googleEnv(),
+          { timeZone: activeSettings.timezoneId }
         )
       );
 
@@ -1767,48 +2229,1643 @@ export default async (req) => {
   CONFIG
 */
 
-function getConfig() {
+/*
+  SETTINGS
 
+  What makes this calendar this calendar: its title, whose name it
+  speaks in, its time zone, the hours it shows, the two default
+  colours, and the words it uses for open and booked time. Stored in
+  the settings record beside the custom colour presets; anything not
+  set falls back to the environment, then to the built-in defaults.
+  The public page sees the resulting config, never the record itself,
+  so the notification address stays private.
+*/
+
+/*
+  ACCOUNT ROUTES
+
+    POST /signup            email, password, display name; the site's
+                            admin password too, to take over the first
+                            calendar rather than start a new one
+    POST /login             email and password -> a session token
+                            (or, with no email, the older admin-password
+                            login for the first calendar)
+    GET  /me                the account behind a session
+    GET  /site              what the home page shows before sign-in
+    POST /verify            the code from the confirmation email
+    POST /resend            another confirmation email
+    POST /forgot            a password-reset email, if the address exists
+    POST /reset             the code from that email and a new password
+    POST /account/password  change the password while signed in
+
+  Every route that could be hammered is rate-limited by address. The
+  answers do say whether an email address has an account - at sign-up
+  and at "forgot password" the person typing it needs to know, and
+  the rate limit is what keeps that from being harvested.
+
+  Returns null for a request that is none of these.
+*/
+
+async function handleAccountRoute(
+  req,
+  route,
+  url,
+  store
+) {
+  if ( req.method !== "POST" && req.method !== "DELETE" && route !== "/me" && route !== "/site" && route !== "/admin/accounts" ) {
+    return null;
+  }
+  const origin =
+    url.origin;
+
+  /*
+    What the home page needs before anyone is signed in: the site's
+    name, whether the first calendar still waits to be claimed, and
+    whether email works here.
+  */
+  if ( route === "/site" ) {
+    if ( req.method !== "GET" ) {
+      return null;
+    }
+    return json({
+      name:
+        siteName(),
+      claimed:
+        Boolean( activeRecord.ownerId ),
+      mail:
+        mailConfigured(),
+      mainSlug:
+        await ensureMainSlug( store ),
+      demo:
+        await demoSlug( store )
+    });
+  }
+  const address =
+    clientAddress( req );
+  const readBody =
+    async () => {
+      try {
+        const body =
+          await req.json();
+        return body && typeof body === "object" ? body : {};
+      } catch {
+        return {};
+      }
+    };
+  const limited =
+    async (bucket, who = address) => {
+      const wait =
+        await rateLimit( store, bucket, who );
+      if ( wait ) {
+        fail( `Too many attempts. Please try again in ${ describeWait( wait ) }.`, 429 );
+      }
+    };
+  const answer =
+    async (user, extra = {}, status = 200) =>
+      json({
+        ok:
+          true,
+        ...issueSession( user ),
+        account:
+          await accountSummary( store, user, origin ),
+        ...extra
+      }, status );
+
+  if ( route === "/signup" ) {
+    const body =
+      await readBody();
+    const email =
+      normalizeEmail( body.email );
+    if ( !emailIsValid( email ) ) {
+      bad( "Please enter a valid email address." );
+    }
+    const problem =
+      passwordProblem( body.password );
+    if ( problem ) {
+      bad( problem );
+    }
+    const displayName =
+      String( body.displayName || "" ).trim().slice( 0, SETTINGS_LIMITS.displayName ) || email.split( "@" )[ 0 ];
+    const title =
+      String( body.title || "" ).trim().slice( 0, SETTINGS_LIMITS.title ) || `${ displayName }'s Calendar`;
+    if ( await findUserByEmail( store, email ) ) {
+      fail( "There is already an account with that email. Log in instead, or reset your password.", 409 );
+    }
+    await limited( "signup" );
+    const mainRecord =
+      await store.get( SETTINGS_KEY, { type: "json", consistency: "strong" } ) || {};
+    const claimingMain =
+      typeof body.adminPassword === "string" && body.adminPassword !== "";
+    let calendarId;
+    let slug;
+    if ( claimingMain ) {
+      if ( mainRecord.ownerId ) {
+        fail( "That calendar already belongs to an account.", 409 );
+      }
+      if ( !adminPasswordMatches( body.adminPassword ) ) {
+        fail( "Incorrect admin password.", 401 );
+      }
+      calendarId =
+        MAIN_CALENDAR_ID;
+      slug =
+        await ensureMainSlug( store );
+    } else {
+      calendarId =
+        crypto.randomUUID();
+      const wanted =
+        slugify( body.slug || displayName ) || "calendar";
+      if ( body.slug && !slugIsValid( wanted ) ) {
+        bad( "An address is 3 to 30 letters, numbers and dashes, and cannot be a word the site uses itself." );
+      }
+      if ( body.slug && await calendarForSlug( store, wanted ) ) {
+        bad( "That address is taken. Please choose another." );
+      }
+      slug =
+        await claimSlug( store, slugIsValid( wanted ) ? wanted : "calendar", calendarId );
+    }
+    const user =
+      await createUser( store, { email, password: body.password, displayName, calendarId } );
+    if ( claimingMain ) {
+      const fresh =
+        await store.get( SETTINGS_KEY, { type: "json", consistency: "strong" } ) || {};
+      await store.setJSON( SETTINGS_KEY, {
+        ...fresh,
+        ownerId:
+          user.id,
+        slug,
+        live:
+          true,
+        ...( fresh.notificationEmail ? {} : { notificationEmail: email } )
+      });
+    } else {
+      await writeCalendarRecord( store, calendarId, {
+        ownerId:
+          user.id,
+        slug,
+        title,
+        displayName,
+        notificationEmail:
+          email,
+        live:
+          false
+      });
+    }
+    await addOwnedCalendar( store, user.id, calendarId );
+    const verification =
+      await sendVerification( store, user, origin );
+    return answer( user, { verification }, 201 );
+  }
+
+  /*
+    MORE CALENDARS
+
+    POST   /calendars          a new calendar for the signed-in account
+    DELETE /calendars/<slug>   one of its calendars, everything in it
+    GET    /me                 (below) lists them
+  */
+  if ( route === "/calendars" && req.method === "POST" ) {
+    if ( !activeUser ) {
+      fail( "Please log in.", 401 );
+    }
+    await limited( "signup", `user:${ activeUser.id }` );
+    const body =
+      await readBody();
+    const title =
+      String( body.title || "" ).trim().slice( 0, SETTINGS_LIMITS.title );
+    if ( !title ) {
+      bad( "Please give the calendar a name." );
+    }
+    const calendarId =
+      crypto.randomUUID();
+    const wanted =
+      slugify( body.slug || title ) || "calendar";
+    if ( body.slug && !slugIsValid( wanted ) ) {
+      bad( "An address is 3 to 30 letters, numbers and dashes, and cannot be a word the site uses itself." );
+    }
+    if ( body.slug && await calendarForSlug( store, wanted ) ) {
+      bad( "That address is taken. Please choose another." );
+    }
+    const slug =
+      await claimSlug( store, slugIsValid( wanted ) ? wanted : "calendar", calendarId );
+    await writeCalendarRecord( store, calendarId, {
+      ownerId:
+        activeUser.id,
+      slug,
+      title,
+      displayName:
+        activeUser.displayName,
+      notificationEmail:
+        activeUser.email,
+      live:
+        Boolean( activeUser.verifiedAt )
+    });
+    await addOwnedCalendar( store, activeUser.id, calendarId );
+    return json({
+      ok:
+        true,
+      calendar:
+        { slug, title, url: `${ origin }/${ slug }` },
+      calendars:
+        await ownedCalendars( store, activeUser, origin )
+    }, 201 );
+  }
+
+  if ( route.startsWith( "/calendars/" ) && req.method === "DELETE" ) {
+    if ( !activeUser ) {
+      fail( "Please log in.", 401 );
+    }
+    const slug =
+      decodeURIComponent( route.slice( "/calendars/".length ) ).toLowerCase();
+    const calendarId =
+      await calendarForSlug( store, slug );
+    if ( !calendarId ) {
+      fail( "There is no calendar at that address.", 404 );
+    }
+    if ( calendarId === MAIN_CALENDAR_ID ) {
+      fail( "The site's first calendar cannot be deleted.", 400 );
+    }
+    const record =
+      await store.get( `cal/${ calendarId }/${ SETTINGS_KEY }`, { type: "json", consistency: "strong" } ) || {};
+    if ( record.ownerId !== activeUser.id && !isMaster( activeUser ) ) {
+      fail( "This is not your calendar.", 401 );
+    }
+    const ownerId =
+      record.ownerId;
+    const owned =
+      ownerId ? await ownedCalendarIds( store, ownerId ) : [];
+    if ( ownerId === activeUser.id && owned.length <= 1 ) {
+      fail( "This is your only calendar. Make another before deleting it.", 400 );
+    }
+    for ( const name of [ EVENTS_KEY, LEGACY_EVENTS_KEY, REQUESTS_KEY, HISTORY_KEY, SETTINGS_KEY ] ) {
+      await store.delete( `cal/${ calendarId }/${ name }` );
+    }
+    await store.delete( `slug/${ slug }` );
+    if ( record.feedToken ) {
+      await store.delete( `feed/${ record.feedToken }` );
+    }
+    if ( ownerId ) {
+      await store.setJSON( `owner/${ ownerId }`, owned.filter( (id) => id !== calendarId ) );
+      const owner =
+        await readUser( store, ownerId );
+      if ( owner && owner.calendarId === calendarId ) {
+        owner.calendarId =
+          owned.find( (id) => id !== calendarId ) || null;
+        await writeUser( store, owner );
+      }
+    }
+    try {
+      await purgeCache({ tags: [ `cal-${ calendarId }` ] });
+    } catch ( error ) {
+      console.error( "Cache purge failed", error );
+    }
+    return json({
+      ok:
+        true,
+      calendars:
+        await ownedCalendars( store, activeUser, origin )
+    });
+  }
+
+  /*
+    THE MASTER'S VIEW: every account and every calendar on the site.
+  */
+  if ( route === "/admin/accounts" ) {
+    if ( req.method !== "GET" ) {
+      return null;
+    }
+    if ( !isMaster( activeUser ) ) {
+      fail( activeUser ? "Only the site's owner can see this." : "Please log in.", activeUser ? 403 : 401 );
+    }
+    const accounts =
+      [];
+    for ( const user of await listUsers( store ) ) {
+      accounts.push({
+        email:
+          user.email,
+        displayName:
+          user.displayName,
+        verified:
+          Boolean( user.verifiedAt ),
+        createdAt:
+          user.createdAt,
+        master:
+          isMaster( user ),
+        calendars:
+          await ownedCalendars( store, user, origin )
+      });
+    }
+    accounts.sort( (a, b) => ( b.master - a.master ) || String( a.createdAt ).localeCompare( String( b.createdAt ) ) );
+    return json({ ok: true, accounts });
+  }
+
+  if ( route === "/login" ) {
+    const body =
+      await readBody();
+    if ( !body.email ) {
+      return legacyLogin( req, body );
+    }
+    await limited( "login" );
+    const email =
+      normalizeEmail( body.email );
+    await limited( "login", `email:${ email }` );
+    const user =
+      await findUserByEmail( store, email );
+    if ( !user || !passwordMatches( body.password, user ) ) {
+      fail( "That email and password do not match.", 401 );
+    }
+    return answer( user );
+  }
+
+  if ( route === "/me" ) {
+    if ( req.method !== "GET" ) {
+      return null;
+    }
+    if ( !activeUser ) {
+      fail( "Please log in.", 401 );
+    }
+    return json({
+      ok:
+        true,
+      account:
+        await accountSummary( store, activeUser, origin ),
+      calendars:
+        await ownedCalendars( store, activeUser, origin )
+    });
+  }
+
+  if ( route === "/verify" ) {
+    await limited( "verify" );
+    const body =
+      await readBody();
+    const record =
+      await consumeToken( store, body.token, "verify" );
+    const user =
+      record ? await readUser( store, record.userId ) : null;
+    if ( !user ) {
+      fail( "That confirmation link has expired or was already used. Log in and ask for a new one.", 400 );
+    }
+    if ( !user.verifiedAt ) {
+      user.verifiedAt =
+        new Date().toISOString();
+      await writeUser( store, user );
+      await publishAll( store, user.id );
+    }
+    return answer( user );
+  }
+
+  if ( route === "/resend" ) {
+    if ( !activeUser ) {
+      fail( "Please log in.", 401 );
+    }
+    if ( activeUser.verifiedAt ) {
+      return json({ ok: true, verification: "done" });
+    }
+    await limited( "verify", `user:${ activeUser.id }` );
+    const verification =
+      await sendVerification( store, activeUser, origin );
+    return json({ ok: true, verification });
+  }
+
+  if ( route === "/forgot" ) {
+    await limited( "forgot" );
+    const body =
+      await readBody();
+    const email =
+      normalizeEmail( body.email );
+    if ( !emailIsValid( email ) ) {
+      bad( "Please enter a valid email address." );
+    }
+    if ( !mailConfigured() ) {
+      fail( "Password reset by email is not set up on this site yet.", 400 );
+    }
+    const user =
+      await findUserByEmail( store, email );
+    /*
+      A plain answer when the address is unknown: a typo should be
+      correctable on the spot, not found out from a silent inbox.
+    */
+    if ( !user ) {
+      fail( "There is no account with that email address. Check the spelling, or sign up.", 404 );
+    }
+    {
+      const token =
+        await issueToken( store, { kind: "reset", userId: user.id, hours: RESET_HOURS } );
+      const link =
+        `${ origin }/?reset=${ token }`;
+      try {
+        await sendMail({
+          to:
+            user.email,
+          fromName:
+            siteName(),
+          ...resetEmail({ displayName: user.displayName, link, siteName: siteName(), hours: RESET_HOURS })
+        });
+      } catch ( error ) {
+        console.error( "Reset email failed", error );
+        fail( "The reset email could not be sent right now. Please try again later.", 502 );
+      }
+    }
+    return json({
+      ok:
+        true,
+      message:
+        `A reset link is on its way to ${ user.email }. It works for two hours.`
+    });
+  }
+
+  if ( route === "/reset" ) {
+    await limited( "verify" );
+    const body =
+      await readBody();
+    const problem =
+      passwordProblem( body.password );
+    if ( problem ) {
+      bad( problem );
+    }
+    const record =
+      await consumeToken( store, body.token, "reset" );
+    const user =
+      record ? await readUser( store, record.userId ) : null;
+    if ( !user ) {
+      fail( "That reset link has expired or was already used. Ask for a new one.", 400 );
+    }
+    Object.assign( user, hashPassword( body.password ) );
+    user.pwVersion =
+      ( user.pwVersion || 1 ) + 1;
+    if ( !user.verifiedAt ) {
+      user.verifiedAt =
+        new Date().toISOString();
+      await publishAll( store, user.id );
+    }
+    await writeUser( store, user );
+    return answer( user );
+  }
+
+  if ( route === "/account/password" ) {
+    if ( !activeUser ) {
+      fail( "Please log in.", 401 );
+    }
+    const body =
+      await readBody();
+    if ( !passwordMatches( body.current, activeUser ) ) {
+      fail( "Your current password is not right.", 401 );
+    }
+    const problem =
+      passwordProblem( body.password );
+    if ( problem ) {
+      bad( problem );
+    }
+    Object.assign( activeUser, hashPassword( body.password ) );
+    activeUser.pwVersion =
+      ( activeUser.pwVersion || 1 ) + 1;
+    await writeUser( store, activeUser );
+    return answer( activeUser );
+  }
+
+  return null;
+}
+
+
+/*
+  The older way in: the site's admin password in a header opens the
+  first calendar until an account claims it. "Keep me signed in"
+  answers with a token the device holds instead of the password: the
+  password's HMAC over an expiry, which proves nothing on its own and
+  dies for every device the moment the password changes on Netlify.
+*/
+function legacyLogin(
+  req,
+  body
+) {
+  requireAdmin(
+    req
+  );
+  const remember =
+    body.remember === true;
+  return json({
+    ok:
+      true,
+    ...(
+      remember
+        ? {
+            token:
+              issueAdminToken(),
+            expiresAt:
+              new Date(
+                Date.now() +
+                ADMIN_TOKEN_DAYS * 86400000
+              ).toISOString()
+          }
+        : {}
+    )
+  });
+}
+
+
+function adminPasswordMatches(
+  password
+) {
+  const expected =
+    Buffer.from( process.env.ADMIN_PASSWORD || "" );
+  const supplied =
+    Buffer.from( String( password || "" ) );
+  return (
+    expected.length > 0 &&
+    expected.length === supplied.length &&
+    crypto.timingSafeEqual( expected, supplied )
+  );
+}
+
+
+function describeMinutes(
+  minutes
+) {
+  if ( minutes % 60 === 0 ) {
+    const hours =
+      minutes / 60;
+    return hours === 1 ? "one hour" : `${ hours } hours`;
+  }
+  if ( minutes > 60 ) {
+    return `${ Math.floor( minutes / 60 ) } h ${ minutes % 60 } min`;
+  }
+  return `${ minutes } minutes`;
+}
+
+
+function describeWait(
+  seconds
+) {
+  if ( seconds < 90 ) {
+    return `${ seconds } seconds`;
+  }
+  const minutes =
+    Math.ceil( seconds / 60 );
+  return minutes === 1 ? "a minute" : `${ minutes } minutes`;
+}
+
+
+/*
+  What the site calls itself, in emails and on every page: MyOpenings.
+  Fixed here on purpose - Netlify sets an environment variable called
+  SITE_NAME to the site's own Netlify name ("ethan-calendar"), and
+  reading any variable for this let that leak onto the page.
+*/
+const SITE_NAME =
+  "MyOpenings";
+
+/*
+  The example calendar the home page links to, if the owner has made
+  one: whatever calendar sits at DEMO_SLUG (default "demo"). No such
+  calendar, no link.
+*/
+async function demoSlug(
+  store
+) {
+  const slug =
+    String( process.env.DEMO_SLUG || "demo" ).trim().toLowerCase();
+  return await calendarForSlug( store, slug )
+    ? slug
+    : null;
+}
+
+function siteName() {
+  return SITE_NAME;
+}
+
+
+/*
+  What the page is told about the signed-in account: never the hash,
+  never the id.
+*/
+async function accountSummary(
+  store,
+  user,
+  origin
+) {
+  const slug =
+    await slugOfCalendar( store, user.calendarId );
+  const owned =
+    await ownedCalendarIds( store, user.id );
   return {
-    portalTitle:
+    email:
+      user.email,
+    displayName:
+      user.displayName,
+    verified:
+      Boolean( user.verifiedAt ),
+    slug,
+    url:
+      `${ origin }/${ slug }`,
+    master:
+      isMaster( user ),
+    calendarCount:
+      owned.length
+  };
+}
+
+
+/*
+  CALENDARS PER ACCOUNT
+
+  An account owns one calendar at sign-up and any number after. The
+  list lives under owner/<userId>; the first calendar an account got
+  stays user.calendarId, which is where its links point. Accounts made
+  before there was a list get one the first time it is asked for.
+*/
+async function ownedCalendarIds(
+  store,
+  userId
+) {
+  const listed =
+    await store.get( `owner/${ userId }`, { type: "json", consistency: "strong" } );
+  if ( Array.isArray( listed ) ) {
+    return listed;
+  }
+  const user =
+    await readUser( store, userId );
+  const seed =
+    user && user.calendarId ? [ user.calendarId ] : [];
+  await store.setJSON( `owner/${ userId }`, seed );
+  return seed;
+}
+
+async function addOwnedCalendar(
+  store,
+  userId,
+  calendarId
+) {
+  const listed =
+    await ownedCalendarIds( store, userId );
+  if ( !listed.includes( calendarId ) ) {
+    await store.setJSON( `owner/${ userId }`, [ ...listed, calendarId ] );
+  }
+}
+
+async function calendarRecordOf(
+  store,
+  calendarId
+) {
+  const key =
+    calendarId === MAIN_CALENDAR_ID
+      ? SETTINGS_KEY
+      : `cal/${ calendarId }/${ SETTINGS_KEY }`;
+  return await store.get( key, { type: "json", consistency: "strong" } ) || {};
+}
+
+/*
+  What the page needs about each of an account's calendars: address,
+  title, colors, whether it is public.
+*/
+async function ownedCalendars(
+  store,
+  user,
+  origin
+) {
+  const out =
+    [];
+  for ( const id of await ownedCalendarIds( store, user.id ) ) {
+    const record =
+      await calendarRecordOf( store, id );
+    const settings =
+      settingsFrom( record );
+    const slug =
+      id === MAIN_CALENDAR_ID ? await ensureMainSlug( store ) : record.slug;
+    if ( !slug ) {
+      continue;
+    }
+    out.push({
+      slug,
+      title:
+        settings.title,
+      colors:
+        { ...settings.colors },
+      labels:
+        { ...settings.labels },
+      live:
+        id === MAIN_CALENDAR_ID || Boolean( record.live ),
+      primary:
+        id === user.calendarId,
+      url:
+        `${ origin }/${ slug }`
+    });
+  }
+  return out;
+}
+
+/*
+  The events of other calendars the same account owns (or, for the
+  master, any calendar), read without switching the calendar in hand:
+  the storage helpers key off activeCalendar, so it is swapped for
+  each and put back.
+*/
+async function overlayCalendars(
+  store,
+  list,
+  rangeStart,
+  rangeEnd
+) {
+  const out =
+    {};
+  const keep =
+    { calendar: activeCalendar, settings: activeSettings, config: activeConfig, record: activeRecord };
+  const slugs =
+    String( list ).split( "," ).map( (item) => item.trim().toLowerCase() ).filter( Boolean ).slice( 0, 12 );
+  try {
+    for ( const slug of slugs ) {
+      if ( slug === keep.calendar.slug ) continue;
+      const id =
+        await calendarForSlug( store, slug );
+      if ( !id ) continue;
+      activeCalendar =
+        { id, slug };
+      useSettings( await readSettings() );
+      if ( !ownsActiveCalendar() ) continue;
+      const events =
+        await readEvents();
+      out[ slug ] = {
+        title:
+          activeSettings.title,
+        colors:
+          { ...activeSettings.colors },
+        labels:
+          { ...activeSettings.labels },
+        events:
+          expandEventsForRange( events, rangeStart, rangeEnd )
+      };
+    }
+  } finally {
+    activeCalendar =
+      keep.calendar;
+    activeSettings =
+      keep.settings;
+    activeConfig =
+      keep.config;
+    activeRecord =
+      keep.record;
+  }
+  return out;
+}
+
+async function writeCalendarRecord(
+  store,
+  calendarId,
+  record
+) {
+  const feedToken =
+    crypto.randomBytes( 24 ).toString( "base64url" );
+  await store.setJSON( `cal/${ calendarId }/${ SETTINGS_KEY }`, {
+    ...record,
+    feedToken,
+    createdAt:
+      new Date().toISOString()
+  });
+  await store.setJSON( `feed/${ feedToken }`, calendarId );
+}
+
+/*
+  Every account, for the master. The store lists keys by prefix; the
+  test shim does the same.
+*/
+async function listUsers(
+  store
+) {
+  const users =
+    [];
+  const seen =
+    new Set();
+  let cursor;
+  do {
+    const page =
+      await store.list({ prefix: "users/", cursor });
+    for ( const blob of page.blobs || [] ) {
+      const id =
+        blob.key.slice( "users/".length );
+      if ( seen.has( id ) ) continue;
+      seen.add( id );
+      const user =
+        await readUser( store, id );
+      if ( user ) users.push( user );
+    }
+    cursor =
+      page.cursor;
+  } while ( cursor );
+  return users;
+}
+
+
+async function slugOfCalendar(
+  store,
+  calendarId
+) {
+  if ( calendarId === MAIN_CALENDAR_ID ) {
+    return ensureMainSlug( store );
+  }
+  const record =
+    await store.get( `cal/${ calendarId }/${ SETTINGS_KEY }`, { type: "json", consistency: "strong" } ) || {};
+  return record.slug || null;
+}
+
+
+/*
+  The address of the calendar in hand, claimed for the first calendar
+  the first time anyone asks.
+*/
+async function currentSlug(
+  store
+) {
+  return activeCalendar.slug || activeRecord.slug || slugOfCalendar( store, activeCalendar.id );
+}
+
+
+/*
+  A confirmed email makes the calendar public.
+*/
+async function publishCalendar(
+  store,
+  calendarId
+) {
+  if ( calendarId === MAIN_CALENDAR_ID || !calendarId ) {
+    return;
+  }
+  const key =
+    `cal/${ calendarId }/${ SETTINGS_KEY }`;
+  const record =
+    await store.get( key, { type: "json", consistency: "strong" } ) || {};
+  await store.setJSON( key, { ...record, live: true } );
+}
+
+async function publishAll(
+  store,
+  userId
+) {
+  for ( const id of await ownedCalendarIds( store, userId ) ) {
+    await publishCalendar( store, id );
+  }
+}
+
+
+/*
+  The confirmation email. Where the site cannot send mail at all, the
+  address is taken on trust and the calendar goes live at once -
+  there is no other way to confirm it.
+*/
+async function sendVerification(
+  store,
+  user,
+  origin
+) {
+  if ( !mailConfigured() ) {
+    if ( !user.verifiedAt ) {
+      user.verifiedAt =
+        new Date().toISOString();
+      await writeUser( store, user );
+      await publishAll( store, user.id );
+    }
+    return "off";
+  }
+  const token =
+    await issueToken( store, { kind: "verify", userId: user.id, hours: VERIFY_HOURS } );
+  const link =
+    `${ origin }/?verify=${ token }`;
+  const name =
+    siteName();
+  try {
+    await sendMail({
+      to:
+        user.email,
+      fromName:
+        name,
+      ...verificationEmail({ displayName: user.displayName, link, siteName: name, hours: VERIFY_HOURS })
+    });
+    return "sent";
+  } catch ( error ) {
+    console.error( "Verification email failed", error );
+    return "failed";
+  }
+}
+
+
+const SETTINGS_LIMITS = {
+  title: 80,
+  displayName: 40,
+  label: 30,
+  noun: 20,
+  email: 120
+};
+
+const EMAIL_PATTERN =
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function envDefaults() {
+  return {
+    title:
       process.env.PORTAL_TITLE ||
       "Ethan's Tutoring Availability",
-
-    /*
-      Shown wherever the page needs to say a
-      person did something, rather than the
-      page itself. Configurable for the same
-      reason the title is.
-    */
-
-    tutorName:
+    displayName:
       process.env.TUTOR_NAME ||
       "Ethan",
-
-    timezoneLabel:
-      process.env.TIMEZONE_LABEL ||
-      "Pacific Time (PT)",
-
     timezoneId:
       TIMEZONE_ID,
-
-    /*
-      Lets the admin page show the Google
-      sync controls only where they do
-      something.
-    */
-
-    googleSync:
-      googleSyncConfigured(),
-
     dayStart:
       8,
-
     dayEnd:
-      24
+      24,
+    colors: {
+      available:
+        "#2f7d4a",
+      blocked:
+        "#b42318"
+    },
+    labels: {
+      available:
+        "Available",
+      blocked:
+        "Blocked Session",
+      person:
+        "student",
+      people:
+        "students"
+    },
+    notificationEmail:
+      "",
+    /*
+      The Google calendar this one mirrors into. The first calendar
+      falls back to the site's GOOGLE_CALENDAR_ID, as before accounts.
+    */
+    googleCalendarId:
+      "",
+    /*
+      Looks: a typeface, the day the week starts on, and the clock.
+    */
+    font:
+      "system",
+    weekStart:
+      0,
+    hourFormat:
+      "12",
+    /*
+      What visitors read the page in, until they pick a language of
+      their own.
+    */
+    language:
+      "en",
+    /*
+      The request form: whether visitors get one, what it says at the
+      top, and the rules a request must meet.
+    */
+    requests: {
+      enabled:
+        true,
+      intro:
+        "",
+      minNoticeHours:
+        0,
+      maxWeeksAhead:
+        12,
+      minMinutes:
+        15,
+      maxMinutes:
+        MAX_REQUEST_MINUTES
+    },
+    /*
+      What visitors are shown of booked time: unnamed blocks, or
+      nothing at all (the open time still shrinks around them).
+    */
+    privacy: {
+      showBooked:
+        true
+    },
+    /*
+      Kinds of booked time the owner wants counted apart in the
+      weekly summary - "Work", "Private tutoring" - named by the
+      owner, chosen on each session. Each keeps a short id so a
+      rename does not lose the sessions filed under it.
+    */
+    categories: []
   };
-
 }
+
+const CATEGORY_LIMITS = {
+  count: 12,
+  name: 30
+};
+
+function categoriesFrom(
+  list
+) {
+  if ( !Array.isArray( list ) ) return [];
+  const seen = new Set();
+  const out = [];
+  for ( const entry of list ) {
+    const id =
+      String( entry && entry.id || "" ).trim().slice( 0, 24 );
+    const name =
+      String( entry && entry.name || "" ).trim().slice( 0, CATEGORY_LIMITS.name );
+    if ( !id || !name || !/^[a-z0-9]+$/i.test( id ) || seen.has( id ) ) continue;
+    seen.add( id );
+    out.push({ id, name });
+    if ( out.length >= CATEGORY_LIMITS.count ) break;
+  }
+  return out;
+}
+
+const REQUEST_RULE_LIMITS = {
+  minNoticeHours: [ 0, 24 * 14 ],
+  maxWeeksAhead: [ 1, 52 ],
+  minMinutes: [ 15, 8 * 60 ],
+  maxMinutes: [ 15, 8 * 60 ],
+  intro: 300
+};
+
+function integerIn(
+  value,
+  [ low, high ]
+) {
+  const n =
+    Number( value );
+  return Number.isInteger( n ) && n >= low && n <= high ? n : null;
+}
+
+const FONTS =
+  new Set([ "system", "serif", "humanist", "rounded", "mono" ]);
+
+const LANGUAGES =
+  new Set([ "en", "es", "zh", "fr", "ko", "vi" ]);
+
+function timezoneIsValid(
+  id
+) {
+  try {
+    new Intl.DateTimeFormat( "en-US", { timeZone: id } );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/*
+  "Pacific Time (PT)", "Eastern Time (ET)", "United Kingdom Time" -
+  the generic names, so the label does not flip with daylight saving.
+*/
+function timezoneLabelFor(
+  id
+) {
+  const name =
+    (style) => {
+      try {
+        return new Intl.DateTimeFormat( "en-US", { timeZone: id, timeZoneName: style } )
+          .formatToParts( new Date() )
+          .find( (part) => part.type === "timeZoneName" )?.value || "";
+      } catch {
+        return "";
+      }
+    };
+  const long =
+    name( "longGeneric" ) || id;
+  const short =
+    name( "shortGeneric" );
+  return short && short !== long && short.length <= 6
+    ? `${ long } (${ short })`
+    : long;
+}
+
+/*
+  The stored record over the defaults, field by field, so a record
+  written by an older version is still whole.
+*/
+function settingsFrom(
+  stored
+) {
+  const base =
+    envDefaults();
+  const record =
+    stored && typeof stored === "object"
+      ? stored
+      : {};
+  const out = {
+    ...base,
+    ...( typeof record.title === "string" && record.title.trim() ? { title: record.title } : {} ),
+    ...( typeof record.displayName === "string" && record.displayName.trim() ? { displayName: record.displayName } : {} ),
+    ...( typeof record.timezoneId === "string" && timezoneIsValid( record.timezoneId ) ? { timezoneId: record.timezoneId } : {} ),
+    ...( Number.isInteger( record.dayStart ) ? { dayStart: record.dayStart } : {} ),
+    ...( Number.isInteger( record.dayEnd ) ? { dayEnd: record.dayEnd } : {} ),
+    ...( typeof record.notificationEmail === "string" ? { notificationEmail: record.notificationEmail } : {} ),
+    ...( typeof record.googleCalendarId === "string" ? { googleCalendarId: record.googleCalendarId.trim() } : {} ),
+    ...( FONTS.has( record.font ) ? { font: record.font } : {} ),
+    ...( record.weekStart === 1 || record.weekStart === 0 ? { weekStart: record.weekStart } : {} ),
+    ...( record.hourFormat === "24" || record.hourFormat === "12" ? { hourFormat: record.hourFormat } : {} ),
+    ...( LANGUAGES.has( record.language ) ? { language: record.language } : {} ),
+    requests: {
+      ...base.requests,
+      ...( record.requests && typeof record.requests === "object"
+        ? {
+            ...( typeof record.requests.enabled === "boolean" ? { enabled: record.requests.enabled } : {} ),
+            ...( typeof record.requests.intro === "string" ? { intro: record.requests.intro.slice( 0, REQUEST_RULE_LIMITS.intro ) } : {} ),
+            ...Object.fromEntries(
+              [ "minNoticeHours", "maxWeeksAhead", "minMinutes", "maxMinutes" ]
+                .map( (key) => [ key, integerIn( record.requests[ key ], REQUEST_RULE_LIMITS[ key ] ) ] )
+                .filter( ([ , value ]) => value !== null )
+            )
+          }
+        : {} )
+    },
+    privacy: {
+      ...base.privacy,
+      ...( record.privacy && typeof record.privacy.showBooked === "boolean" ? { showBooked: record.privacy.showBooked } : {} )
+    },
+    categories:
+      categoriesFrom( record.categories ),
+    colors: {
+      ...base.colors,
+      ...( record.colors && HEX_COLOR.test( record.colors.available || "" ) ? { available: record.colors.available } : {} ),
+      ...( record.colors && HEX_COLOR.test( record.colors.blocked || "" ) ? { blocked: record.colors.blocked } : {} )
+    },
+    labels: {
+      ...base.labels,
+      ...Object.fromEntries(
+        Object.entries( record.labels || {} )
+          .filter( ([ key, value ]) => key in base.labels && typeof value === "string" && value.trim() )
+      )
+    }
+  };
+  if ( !( out.dayStart >= 0 && out.dayStart <= 23 && out.dayEnd >= 1 && out.dayEnd <= 24 && out.dayEnd > out.dayStart ) ) {
+    out.dayStart = base.dayStart;
+    out.dayEnd = base.dayEnd;
+  }
+  if ( out.requests.maxMinutes < out.requests.minMinutes ) {
+    out.requests.maxMinutes = out.requests.minMinutes;
+  }
+  return out;
+}
+
+/*
+  What the page is told. Everything a visitor may see; the
+  notification address is not among it.
+*/
+function configFrom(
+  settings
+) {
+  return {
+    portalTitle:
+      settings.title,
+    tutorName:
+      settings.displayName,
+    timezoneId:
+      settings.timezoneId,
+    timezoneLabel:
+      timezoneLabelFor( settings.timezoneId ),
+    dayStart:
+      settings.dayStart,
+    dayEnd:
+      settings.dayEnd,
+    colors:
+      { ...settings.colors },
+    labels:
+      { ...settings.labels },
+    googleSync:
+      googleSyncConfigured( googleEnvFor( settings ) ),
+    font:
+      settings.font,
+    weekStart:
+      settings.weekStart,
+    hourFormat:
+      settings.hourFormat,
+    language:
+      settings.language,
+    requests:
+      { ...settings.requests },
+    privacy:
+      { ...settings.privacy }
+  };
+}
+
+/*
+  A settings body from the admin: every field checked, unknown fields
+  ignored, the presets and anything else in the record left alone.
+*/
+function validateSettings(
+  body,
+  current
+) {
+  if ( !body || typeof body !== "object" ) {
+    bad( "Invalid settings." );
+  }
+  const text =
+    (value, limit, what) => {
+      const out =
+        String( value ?? "" ).trim();
+      if ( !out ) bad( `Please enter ${ what }.` );
+      if ( out.length > limit ) bad( `${ what[ 0 ].toUpperCase() + what.slice( 1 ) } is too long (${ limit } characters at most).` );
+      return out;
+    };
+  const next =
+    { ...current };
+  if ( "title" in body ) next.title = text( body.title, SETTINGS_LIMITS.title, "a calendar title" );
+  if ( "displayName" in body ) next.displayName = text( body.displayName, SETTINGS_LIMITS.displayName, "a display name" );
+  if ( "timezoneId" in body ) {
+    const id =
+      String( body.timezoneId || "" ).trim();
+    if ( !timezoneIsValid( id ) ) bad( "That time zone is not recognised." );
+    next.timezoneId = id;
+  }
+  if ( "dayStart" in body ) next.dayStart = Number( body.dayStart );
+  if ( "dayEnd" in body ) next.dayEnd = Number( body.dayEnd );
+  if (
+    !Number.isInteger( next.dayStart ) || !Number.isInteger( next.dayEnd ) ||
+    next.dayStart < 0 || next.dayStart > 23 || next.dayEnd < 1 || next.dayEnd > 24
+  ) {
+    bad( "Day start and end must be whole hours between 12 AM and 12 AM." );
+  }
+  if ( next.dayEnd <= next.dayStart ) {
+    bad( "The day must end after it starts." );
+  }
+  if ( body.colors && typeof body.colors === "object" ) {
+    next.colors = { ...current.colors };
+    for ( const key of [ "available", "blocked" ] ) {
+      if ( key in body.colors ) {
+        const color =
+          normalizeColor( body.colors[ key ] );
+        if ( !color ) bad( `Please choose a colour for ${ key } time.` );
+        next.colors[ key ] = color;
+      }
+    }
+  }
+  if ( body.labels && typeof body.labels === "object" ) {
+    next.labels = { ...current.labels };
+    for ( const key of [ "available", "blocked" ] ) {
+      if ( key in body.labels ) next.labels[ key ] = text( body.labels[ key ], SETTINGS_LIMITS.label, `a name for ${ key } time` );
+    }
+    for ( const key of [ "person", "people" ] ) {
+      if ( key in body.labels ) next.labels[ key ] = text( body.labels[ key ], SETTINGS_LIMITS.noun, `a word for what the summary counts (${ key === "person" ? "one" : "several" })` );
+    }
+  }
+  if ( "notificationEmail" in body ) {
+    const email =
+      String( body.notificationEmail || "" ).trim();
+    if ( email && ( email.length > SETTINGS_LIMITS.email || !EMAIL_PATTERN.test( email ) ) ) {
+      bad( "That notification email address does not look right." );
+    }
+    next.notificationEmail = email;
+  }
+  if ( "font" in body ) {
+    if ( !FONTS.has( body.font ) ) bad( "That typeface is not one of the choices." );
+    next.font = body.font;
+  }
+  if ( "weekStart" in body ) {
+    const day = Number( body.weekStart );
+    if ( day !== 0 && day !== 1 ) bad( "The week starts on Sunday or Monday." );
+    next.weekStart = day;
+  }
+  if ( "language" in body ) {
+    if ( !LANGUAGES.has( body.language ) ) bad( "That language is not one of the choices." );
+    next.language = body.language;
+  }
+  if ( "hourFormat" in body ) {
+    const format = String( body.hourFormat );
+    if ( format !== "12" && format !== "24" ) bad( "The clock is 12-hour or 24-hour." );
+    next.hourFormat = format;
+  }
+  if ( body.requests && typeof body.requests === "object" ) {
+    const incoming =
+      body.requests;
+    next.requests =
+      { ...current.requests };
+    if ( "enabled" in incoming ) next.requests.enabled = Boolean( incoming.enabled );
+    if ( "intro" in incoming ) {
+      const intro =
+        String( incoming.intro || "" ).trim();
+      if ( intro.length > REQUEST_RULE_LIMITS.intro ) bad( `The request form's introduction is too long (${ REQUEST_RULE_LIMITS.intro } characters at most).` );
+      next.requests.intro = intro;
+    }
+    const names = {
+      minNoticeHours: "the notice a request needs (0 to 336 hours)",
+      maxWeeksAhead: "how far ahead a request can be (1 to 52 weeks)",
+      minMinutes: "the shortest session (15 minutes to 8 hours)",
+      maxMinutes: "the longest session (15 minutes to 8 hours)"
+    };
+    for ( const key of Object.keys( names ) ) {
+      if ( key in incoming ) {
+        const value =
+          integerIn( incoming[ key ], REQUEST_RULE_LIMITS[ key ] );
+        if ( value === null ) bad( `Please enter ${ names[ key ] }.` );
+        next.requests[ key ] = value;
+      }
+    }
+    if ( next.requests.maxMinutes < next.requests.minMinutes ) bad( "The longest session cannot be shorter than the shortest." );
+  }
+  if ( body.privacy && typeof body.privacy === "object" ) {
+    next.privacy =
+      { ...current.privacy };
+    if ( "showBooked" in body.privacy ) next.privacy.showBooked = Boolean( body.privacy.showBooked );
+  }
+  if ( "categories" in body ) {
+    if ( !Array.isArray( body.categories ) ) bad( "Invalid categories." );
+    if ( body.categories.length > CATEGORY_LIMITS.count ) bad( `Up to ${ CATEGORY_LIMITS.count } categories.` );
+    const names = new Set();
+    const list = [];
+    for ( const entry of body.categories ) {
+      const name =
+        text( entry && entry.name, CATEGORY_LIMITS.name, "a name for each category" );
+      if ( names.has( name.toLowerCase() ) ) bad( `Two categories are both called "${ name }".` );
+      names.add( name.toLowerCase() );
+      const id =
+        String( entry && entry.id || "" ).trim();
+      list.push({
+        id:
+          /^[a-z0-9]{1,24}$/i.test( id ) && id !== "omitted"
+            ? id
+            : crypto.randomBytes( 6 ).toString( "hex" ),
+        name
+      });
+    }
+    next.categories =
+      categoriesFrom( list );
+  }
+  if ( "googleCalendarId" in body ) {
+    const id =
+      String( body.googleCalendarId || "" ).trim();
+    if ( id && ( id.length > 200 || !/^[^\s]+@[^\s]+$/.test( id ) ) ) {
+      bad( "A Google Calendar ID looks like an email address - find it under the calendar's settings, \"Integrate calendar\"." );
+    }
+    next.googleCalendarId = id;
+  }
+  return next;
+}
+
+/*
+  The environment the Google mirror sees for one calendar: the site's
+  service account, and the Google calendar this one chose. The first
+  calendar keeps using the site's GOOGLE_CALENDAR_ID until it chooses
+  its own.
+*/
+function googleEnvFor(
+  settings,
+  calendarId = activeCalendar.id
+) {
+  const chosen =
+    settings.googleCalendarId ||
+    ( calendarId === MAIN_CALENDAR_ID ? process.env.GOOGLE_CALENDAR_ID : "" ) ||
+    "";
+  return {
+    ...process.env,
+    GOOGLE_CALENDAR_ID:
+      chosen
+  };
+}
+
+function googleEnv() {
+  return googleEnvFor( activeSettings );
+}
+
+/*
+  What Settings shows about Google: whether the site has a service
+  account at all, and its address, which the owner shares their
+  calendar with.
+*/
+function googleStatus() {
+  let email =
+    null;
+  try {
+    email =
+      JSON.parse( process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "null" )?.client_email || null;
+  } catch {
+    email =
+      null;
+  }
+  return {
+    available:
+      Boolean( email ),
+    serviceAccountEmail:
+      email,
+    calendarId:
+      activeSettings.googleCalendarId ||
+      ( activeCalendar.id === MAIN_CALENDAR_ID ? process.env.GOOGLE_CALENDAR_ID || "" : "" ),
+    fromSite:
+      !activeSettings.googleCalendarId &&
+      activeCalendar.id === MAIN_CALENDAR_ID &&
+      Boolean( process.env.GOOGLE_CALENDAR_ID )
+  };
+}
+
+/*
+  THE FEED TOKEN
+
+  The first calendar's feed is behind CALENDAR_FEED_TOKEN if the site
+  has one; every other calendar (and the first, without that variable)
+  gets a random token kept with its settings and indexed under
+  feed/<token>, so the feed route can find the calendar from the
+  address alone.
+*/
+async function ensureFeedToken(
+  store
+) {
+  if (
+    activeCalendar.id === MAIN_CALENDAR_ID &&
+    typeof process.env.CALENDAR_FEED_TOKEN === "string" &&
+    process.env.CALENDAR_FEED_TOKEN.length >= 16
+  ) {
+    return process.env.CALENDAR_FEED_TOKEN;
+  }
+  const stored =
+    await readSettings();
+  if ( stored.feedToken ) {
+    const indexed =
+      await store.get( `feed/${ stored.feedToken }`, { type: "json", consistency: "strong" } );
+    if ( indexed !== activeCalendar.id ) {
+      await store.setJSON( `feed/${ stored.feedToken }`, activeCalendar.id );
+    }
+    return stored.feedToken;
+  }
+  const token =
+    crypto.randomBytes( 24 ).toString( "base64url" );
+  await writeSettings({ ...stored, feedToken: token });
+  await store.setJSON( `feed/${ token }`, activeCalendar.id );
+  return token;
+}
+
+function feedUrlFor(
+  url,
+  token,
+  slug
+) {
+  return `${ url.origin }/api/feed/${ encodeURIComponent( token ) }/${ slug || "tutoring" }.ics`;
+}
+
+/*
+  Which calendar a feed token opens: the first, for the site's own
+  token; else whichever the index names. Null for anything else.
+*/
+async function calendarForFeedToken(
+  store,
+  token
+) {
+  if ( feedTokenIsValid( token ) ) {
+    return { id: MAIN_CALENDAR_ID, slug: null };
+  }
+  if ( !token || !/^[A-Za-z0-9_-]{20,64}$/.test( token ) ) {
+    return null;
+  }
+  const id =
+    await store.get( `feed/${ token }`, { type: "json", consistency: "strong" } );
+  if ( !id ) {
+    return null;
+  }
+  return { id, slug: null };
+}
+
+/*
+  The settings in force for the request being handled. A function
+  instance serves one request at a time, so this is set once at the
+  top of the handler and read by the helpers below without every
+  validator having to carry it.
+*/
+let activeSettings =
+  settingsFrom( null );
+
+let activeConfig =
+  configFrom( activeSettings );
+
+/*
+  The stored record as it is, for the few things kept on it that are
+  not settings - the last email failure, say.
+*/
+let activeRecord =
+  {};
+
+function useSettings(
+  stored
+) {
+  activeRecord =
+    stored && typeof stored === "object"
+      ? stored
+      : {};
+  activeSettings =
+    settingsFrom( stored );
+  activeConfig =
+    configFrom( activeSettings );
+}
+
+/*
+  What the admin page shows about email: whether sending is set up,
+  where notifications go, and the last failure if one is remembered.
+*/
+function mailStatus() {
+  return {
+    configured:
+      mailConfigured(),
+    address:
+      activeSettings.notificationEmail || "",
+    lastError:
+      activeRecord.lastMailError || null
+  };
+}
+
+async function rememberMailOutcome(
+  error
+) {
+  const stored =
+    await readSettings();
+  const next =
+    { ...stored };
+  if ( error ) {
+    next.lastMailError = {
+      at:
+        new Date().toISOString(),
+      message:
+        String( error.message || error )
+    };
+  } else {
+    delete next.lastMailError;
+  }
+  await writeSettings( next );
+  useSettings( next );
+}
+
+/*
+  A made-up request for the test email: a named student and guardian,
+  next Tuesday at four in the calendar's own clock.
+*/
+function sampleRequest() {
+  const todayKey =
+    currentMinuteKey();
+  const today =
+    minuteKeyToLocalDateTime( todayKey ).slice( 0, 10 );
+  const weekday =
+    new Date( today + "T12:00:00Z" ).getUTCDay();
+  const daysAhead =
+    ( ( 2 - weekday + 7 ) % 7 ) || 7;
+  const date =
+    addDaysToDate( today, daysAhead );
+  return {
+    id:
+      "test",
+    name:
+      "John Doe",
+    email:
+      "john.doe@example.com",
+    phone:
+      "(555) 555-0123",
+    guardian:
+      "Jane Doe",
+    subject:
+      "Algebra II",
+    format:
+      "Online",
+    recurrence:
+      null,
+    start:
+      date + "T16:00",
+    end:
+      date + "T17:00"
+  };
+}
+
+/*
+  Tell the admin about a new request. Nothing here can fail the
+  request itself: a send that goes wrong is logged and remembered for
+  the banner, and the requester is none the wiser.
+*/
+async function notifyNewRequest(
+  request,
+  siteUrl
+) {
+  const to =
+    activeSettings.notificationEmail;
+  if ( !to || !mailConfigured() ) {
+    return { sent: false, reason: !to ? "no-address" : "not-configured" };
+  }
+  const message =
+    requestNotification({
+      request,
+      config:
+        activeConfig,
+      siteUrl
+    });
+  try {
+    await sendMail({
+      to,
+      fromName:
+        activeConfig.portalTitle,
+      replyTo:
+        request.email,
+      ...message
+    });
+    if ( activeRecord.lastMailError ) {
+      await rememberMailOutcome( null );
+    }
+    return { sent: true };
+  } catch ( error ) {
+    console.error( "Request notification failed", error );
+    await rememberMailOutcome( error );
+    return { sent: false, reason: "failed", error: error.message };
+  }
+}
+
+function getConfig() {
+  return activeConfig;
+}
+
+
 
 
 /*
@@ -1825,7 +3882,7 @@ async function readEvents() {
 
   const current =
     await store.get(
-      EVENTS_KEY,
+      storageKey( EVENTS_KEY ),
       {
         type:
           "json",
@@ -1854,7 +3911,9 @@ async function readEvents() {
   */
 
   const legacy =
-    await store.get(
+    activeCalendar.id !== MAIN_CALENDAR_ID
+      ? null
+      : await store.get(
       LEGACY_EVENTS_KEY,
       {
         type:
@@ -1890,7 +3949,7 @@ async function readEvents() {
 
 
   await store.setJSON(
-    EVENTS_KEY,
+    storageKey( EVENTS_KEY ),
     migrated
   );
 
@@ -1911,13 +3970,13 @@ async function writeEvents(
 
 
   await store.setJSON(
-    EVENTS_KEY,
+    storageKey( EVENTS_KEY ),
     events
   );
 
 
   try {
-    await purgeCache({ tags: [EVENTS_CACHE_TAG] });
+    await purgeCache({ tags: [ cacheTag() ] });
   } catch (error) {
     console.error("Cache purge failed", error);
   }
@@ -1985,7 +4044,7 @@ async function readHistory() {
 
 
   return await store.get(
-    HISTORY_KEY,
+    storageKey( HISTORY_KEY ),
     {
       type:
         "json",
@@ -2009,7 +4068,7 @@ async function writeHistory(
 
 
   await store.setJSON(
-    HISTORY_KEY,
+    storageKey( HISTORY_KEY ),
     history
   );
 
@@ -2023,7 +4082,7 @@ async function readSettings() {
     );
   const settings =
     await store.get(
-      SETTINGS_KEY,
+      storageKey( SETTINGS_KEY ),
       {
         type:
           "json",
@@ -2045,7 +4104,7 @@ async function writeSettings(
       STORE_NAME
     );
   await store.setJSON(
-    SETTINGS_KEY,
+    storageKey( SETTINGS_KEY ),
     settings
   );
 }
@@ -2063,7 +4122,7 @@ async function rememberCustomColor(
   if (
     !color ||
     PALETTE_HEXES.has( color ) ||
-    Object.values( DEFAULT_COLORS ).includes( color )
+    Object.values( defaultColors() ).includes( color )
   ) {
     return;
   }
@@ -2114,7 +4173,7 @@ async function readRequests() {
 
   const current =
     await store.get(
-      REQUESTS_KEY,
+      storageKey( REQUESTS_KEY ),
       {
         type:
           "json",
@@ -2152,7 +4211,7 @@ async function writeRequests(
 
 
   await store.setJSON(
-    REQUESTS_KEY,
+    storageKey( REQUESTS_KEY ),
     requests
   );
 
@@ -2285,44 +4344,78 @@ function requireAdmin(
 ) {
 
   if (
-    !process.env.ADMIN_PASSWORD
-  ) {
-
-    const error =
-      new Error(
-        "ADMIN_PASSWORD is not configured in Netlify."
-      );
-
-
-    error.status =
-      503;
-
-
-    throw error;
-
-  }
-
-
-  if (
-    !hasValidAdminPassword(
+    hasValidAdminPassword(
       req
     )
   ) {
-
-    const error =
-      new Error(
-        "Incorrect admin password."
-      );
-
-
-    error.status =
-      401;
-
-
-    throw error;
-
+    return;
   }
 
+  /*
+    A session that no longer opens this calendar: it expired, the
+    password changed, or it belongs to someone else's account.
+  */
+  if (
+    req.headers.get( "x-session" )
+  ) {
+    fail(
+      activeUser
+        ? "This is not your calendar."
+        : "Please log in again.",
+      401
+    );
+  }
+
+  if (
+    !process.env.ADMIN_PASSWORD
+  ) {
+    fail(
+      "ADMIN_PASSWORD is not configured in Netlify.",
+      503
+    );
+  }
+
+  fail(
+    "Incorrect admin password.",
+    401
+  );
+
+}
+
+
+/*
+  The owner of the calendar in hand: a signed-in account that owns
+  it, or - for the first calendar, until an account claims it - the
+  site's admin password or the device token made from it.
+*/
+function ownsActiveCalendar() {
+  if ( !activeUser ) {
+    return false;
+  }
+  if ( isMaster( activeUser ) ) {
+    return true;
+  }
+  return Boolean(
+    activeRecord.ownerId &&
+    activeRecord.ownerId === activeUser.id
+  );
+}
+
+
+/*
+  THE MASTER ACCOUNT
+
+  The site's owner. One address, MASTER_EMAIL in Netlify (the site's
+  own by default), whose account can open every calendar on the site
+  as its admin and see every account.
+*/
+const MASTER_EMAIL =
+  ( process.env.MASTER_EMAIL || "ethanp0811@gmail.com" ).trim().toLowerCase();
+
+function isMaster(
+  user
+) {
+  return Boolean( user && user.email === MASTER_EMAIL );
 }
 
 
@@ -2433,6 +4526,25 @@ function hasValidAdminToken(
 function hasValidAdminPassword(
   req
 ) {
+
+  if (
+    ownsActiveCalendar()
+  ) {
+
+    return true;
+
+  }
+
+
+  if (
+    activeCalendar.id !== MAIN_CALENDAR_ID ||
+    activeRecord.ownerId
+  ) {
+
+    return false;
+
+  }
+
 
   const expected =
     process.env.ADMIN_PASSWORD ||
@@ -2660,6 +4772,50 @@ function validateEvent(
           0,
           500
         ),
+
+    /*
+      The name the session gets on the owner's Google calendar. Left
+      out of the body, it is "whatever it was"; an empty string
+      clears it back to the mirror's plain "Tutoring".
+    */
+    /*
+      The category the session is filed under, by id; unknown or
+      blank means none, and "omitted" leaves it out of the weekly
+      summary's count. Left out of the body, it is kept.
+    */
+    ...(
+      "category" in event
+        ? {
+            category:
+              String(
+                event.category ||
+                ""
+              )
+                .trim()
+                .slice(
+                  0,
+                  24
+                )
+          }
+        : {}
+    ),
+
+    ...(
+      "googleTitle" in event
+        ? {
+            googleTitle:
+              String(
+                event.googleTitle ||
+                ""
+              )
+                .trim()
+                .slice(
+                  0,
+                  100
+                )
+          }
+        : {}
+    ),
 
     recurrence
   };
@@ -3389,14 +5545,19 @@ const HEX_COLOR =
   /^#[0-9a-f]{6}$/;
 
 /*
-  The colour a block has when it has none: the red and green every
-  visitor sees. Painting a block that exact colour is painting it
-  nothing, and is stored that way.
+  The colour a block has when it has none: the two defaults from the
+  settings, red and green unless the admin chose otherwise. Painting a
+  block that exact colour is painting it nothing, and is stored that
+  way.
 */
-const DEFAULT_COLORS = {
-  BLOCKED: "#b42318",
-  AVAILABLE: "#2f7d4a"
-};
+function defaultColors() {
+  return {
+    BLOCKED:
+      activeSettings.colors.blocked,
+    AVAILABLE:
+      activeSettings.colors.available
+  };
+}
 
 /*
   The basic palette the client offers; anything else is "custom".
@@ -3410,7 +5571,9 @@ const PALETTE_HEXES =
 function defaultColorFor(
   type
 ) {
-  return DEFAULT_COLORS[ type ] || DEFAULT_COLORS.BLOCKED;
+  const colors =
+    defaultColors();
+  return colors[ type ] || colors.BLOCKED;
 }
 
 /*
@@ -4010,26 +6173,70 @@ function validateRequest(
   }
 
 
+    const rules =
+    activeSettings.requests;
+
+
   if (
     endKey -
     startKey >
-    MAX_REQUEST_MINUTES
+    rules.maxMinutes
   ) {
 
     bad(
-      "A single session cannot run longer than eight hours."
+      `A single session cannot run longer than ${ describeMinutes( rules.maxMinutes ) }.`
     );
 
   }
 
 
   if (
+    endKey -
     startKey <
-    currentMinuteKey()
+    rules.minMinutes
+  ) {
+
+    bad(
+      `A session must be at least ${ describeMinutes( rules.minMinutes ) } long.`
+    );
+
+  }
+
+
+  const nowKey =
+    currentMinuteKey();
+
+
+  if (
+    startKey <
+    nowKey
   ) {
 
     bad(
       "Please choose a time in the future."
+    );
+
+  }
+
+
+  if (
+    rules.minNoticeHours > 0 &&
+    startKey < nowKey + rules.minNoticeHours * 60
+  ) {
+
+    bad(
+      `Requests need at least ${ describeMinutes( rules.minNoticeHours * 60 ) }' notice.`
+    );
+
+  }
+
+
+  if (
+    startKey > nowKey + rules.maxWeeksAhead * 7 * 1440
+  ) {
+
+    bad(
+      `Requests can be made up to ${ rules.maxWeeksAhead === 1 ? "one week" : rules.maxWeeksAhead + " weeks" } ahead.`
     );
 
   }
@@ -4044,22 +6251,35 @@ function validateRequest(
       : null;
 
 
+  /*
+    How to reach them: an email is required, since it is what the
+    admin answers with; a phone and a parent or guardian are offered
+    but not demanded. All three are seen only by the admin.
+  */
+  const email =
+    String( request.email || "" ).trim().toLowerCase();
+  if ( !email || email.length > 120 || !EMAIL_PATTERN.test( email ) ) {
+    bad( `Please enter an email address ${ activeSettings.displayName } can reply to.` );
+  }
+  const phone =
+    String( request.phone || "" ).trim().slice( 0, 40 );
+  if ( phone && !/^[0-9+()\-.\s]{5,40}$/.test( phone ) ) {
+    bad( "That phone number does not look right." );
+  }
+  const guardian =
+    String( request.guardian || "" ).trim().slice( 0, 80 );
   return {
     id:
       crypto.randomUUID(),
-
     name,
-
+    email,
+    ...( phone ? { phone } : {} ),
+    ...( guardian ? { guardian } : {} ),
     subject,
-
     format,
-
     recurrence,
-
     start,
-
     end,
-
     createdAt:
       new Date()
         .toISOString()
@@ -4781,58 +7001,20 @@ function buildPublicSchedule(
 
 
   /*
-    Only show blocked sessions publicly
-    where they overlap a period that was
-    marked as tutoring availability.
+    Every booked session is published (when the owner allows booked
+    time to show at all), whether or not it sits inside a period
+    marked as open. A session outside the open hours used to be left
+    out, which made the day look free where it was not.
 
-    Each session is published separately.
-    Merging back-to-back ones into a single
-    span would hide how many there are, and
-    that count is the honest signal of how
-    busy the day is.
+    Each session is published separately. Merging back-to-back ones
+    into a single span would hide how many there are, and that count
+    is the honest signal of how busy the day is.
   */
 
   const publicBlocked =
-    [];
-
-
-  for (
-    const block of blockedSessions
-  ) {
-
-    for (
-      const availability of available
-    ) {
-
-      const start =
-        Math.max(
-          block[0],
-          availability[0]
-        );
-
-
-      const end =
-        Math.min(
-          block[1],
-          availability[1]
-        );
-
-
-      if (
-        start <
-        end
-      ) {
-
-        publicBlocked.push([
-          start,
-          end
-        ]);
-
-      }
-
-    }
-
-  }
+    activeSettings.privacy.showBooked
+      ? blockedSessions.map( (block) => [ block[0], block[1] ] )
+      : [];
 
 
   const output =
@@ -5227,13 +7409,12 @@ function normalizeLocalDateTime(
 */
 
 function currentMinuteKey() {
-
   const parts =
     new Intl.DateTimeFormat(
       "en-CA",
       {
         timeZone:
-          TIMEZONE_ID,
+          activeSettings.timezoneId,
 
         year:
           "numeric",
@@ -5535,15 +7716,15 @@ function json(body, status = 200, extraHeaders = {}) {
 */
 
 function publicCacheHeaders(req, admin) {
-  if (admin || req.headers.get("x-admin-password") || req.headers.get("x-admin-token")) {
+  if (admin || req.headers.get("x-admin-password") || req.headers.get("x-admin-token") || req.headers.get("x-session")) {
     return {};                       // admin, or anyone carrying a credential header: never cache
   }
   return {
     "Cache-Control": "public, max-age=0, must-revalidate",
     "Netlify-CDN-Cache-Control":
       "public, s-maxage=3600, durable",
-    "Netlify-Cache-Tag": EVENTS_CACHE_TAG,
-    "Vary": "x-admin-password, x-admin-token"
+    "Netlify-Cache-Tag": cacheTag(),
+    "Vary": "x-admin-password, x-admin-token, x-session"
   };
 }
 
@@ -5560,7 +7741,10 @@ export {
   normalizeSchedule,
   resolveOccurrenceColor,
   applyColorScope,
-  dropWeekday
+  dropWeekday,
+  settingsFrom,
+  configFrom,
+  validateSettings
 };
 
 

@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8975
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -33,7 +34,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
 
         # ---- without the box: a reload asks again
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn")
         check("the login offers to keep the device signed in, ticked by default",
               await page.evaluate("document.getElementById('rememberMeInput').checked"))
@@ -41,7 +42,7 @@ async def main():
         await page.fill("#adminPasswordInput", "t"); await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
         check("signed in", await is_admin(page))
         check("nothing stored when the box is off", await stored(page) is None)
-        check("no Sign out without a remembered device", not await visible(page, "#signOutBtn"))
+        check("Sign out is offered for a password-only session too", await visible(page, "#signOutBtn"))
         await page.reload(wait_until="networkidle"); await page.wait_for_timeout(500)
         check("a reload is back to public", not await is_admin(page))
 
@@ -51,7 +52,7 @@ async def main():
         check("signed in again", await is_admin(page))
         tok = await stored(page)
         check("a token is stored, not the password", tok is not None and '"t"' not in tok and "token" in tok, str(tok))
-        check("Sign out appears in the banner", await visible(page, "#signOutBtn"))
+        check("Sign out is in the profile menu", await visible(page, "#signOutBtn"))
         await page.reload(wait_until="networkidle"); await page.wait_for_timeout(600)
         check("a reload comes back in admin mode with no dialog", await is_admin(page)
               and await page.evaluate("document.getElementById('loginModal').classList.contains('hidden')"))
@@ -65,15 +66,15 @@ async def main():
         check("a save works while signed in by token", await page.locator(".event-card").count() == 1)
 
         # ---- Public view keeps the device; Admin is one click
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(500)
+        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(500)
         check("Public view shows the public page", not await is_admin(page))
         check("but the device is still remembered", await stored(page) is not None)
-        await page.click("#adminBtn"); await page.wait_for_timeout(700)
-        check("Admin comes straight back without a password", await is_admin(page)
+        await page.evaluate("document.getElementById('backToAdminBtn').click()"); await page.wait_for_timeout(700)
+        check("Back to admin comes straight back without a password", await is_admin(page)
               and await page.evaluate("document.getElementById('loginModal').classList.contains('hidden')"))
 
         # ---- Sign out forgets
-        await page.click("#signOutBtn"); await page.wait_for_timeout(500)
+        await page.evaluate("document.getElementById('signOutBtn').click()"); await page.wait_for_timeout(500)
         check("Sign out returns to public and forgets the device", not await is_admin(page) and await stored(page) is None)
         status = await page.text_content("#status")
         check("and says so", "Signed out" in status, status)

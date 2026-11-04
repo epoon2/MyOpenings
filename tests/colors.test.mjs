@@ -143,7 +143,8 @@ ok('but not by the public', r.status === 401);
 await req('POST', `/events/${id}/color`, { color: '#1d4ed8', scope: 'all' });
 
 const pub = (await req('GET', '/events?start=2026-09-13&end=2026-09-19', null, false)).data;
-ok('the public schedule carries no color at all, presets included', pub.mode === 'public' && !JSON.stringify(pub).includes('olor'));
+ok('the public schedule carries no color at all, presets included - only the two defaults in the config',
+  pub.mode === 'public' && !JSON.stringify(pub.events).includes('olor') && !('customColors' in pub) && pub.config.colors.blocked === '#b42318');
 
 r = await req('POST', `/events/${id}/weekday`, { weekday: 1 });
 ok('the weekday route drops all Mondays', r.status === 200 && r.data.ok, JSON.stringify(r.data));

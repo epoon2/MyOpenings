@@ -1,7 +1,7 @@
 {
-  "name": "Ethan's Tutoring Availability",
-  "short_name": "Tutoring",
-  "description": "Tutoring availability, and a way to request a session.",
+  "name": "MyOpenings",
+  "short_name": "MyOpenings",
+  "description": "Share when you are free, at a link of your own.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8891
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 ok, fail = [], []
 def check(name, cond, extra=""):
     (ok if cond else fail).append(name)
@@ -19,7 +20,7 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
 
         # --- admin mode ---
         await page.click("#adminBtn")
@@ -206,7 +207,7 @@ async def main():
             await page.wait_for_timeout(400)
             on_card = await modal_state()
             check("left-click on a blocked session opens it for editing",
-                  on_card["open"] and on_card["id"] != "" and on_card["title"] == "Edit time"
+                  on_card["open"] and on_card["id"] != "" and on_card["title"] == "Edit event"
                   and on_card["name"] == "Maya - Algebra II", str(on_card))
             check("the editor is the full form, not a fresh one",
                   on_card["type"] == "BLOCKED", str(on_card))
@@ -230,7 +231,7 @@ async def main():
             await page.wait_for_timeout(400)
             on_avail = await modal_state()
             check("left-click on availability adds a NEW session (not edit)",
-                  on_avail["open"] and on_avail["id"] == "" and on_avail["title"] == "Add time", str(on_avail))
+                  on_avail["open"] and on_avail["id"] == "" and on_avail["title"] == "Add event", str(on_avail))
             await page.click("[data-close='eventModal']")
             await page.wait_for_timeout(300)
 
@@ -240,7 +241,7 @@ async def main():
             await page.wait_for_timeout(400)
             on_empty = await modal_state()
             check("left-click on empty space adds a NEW session",
-                  on_empty["open"] and on_empty["id"] == "" and on_empty["title"] == "Add time", str(on_empty))
+                  on_empty["open"] and on_empty["id"] == "" and on_empty["title"] == "Add event", str(on_empty))
             await page.click("[data-close='eventModal']")
             await page.wait_for_timeout(300)
 

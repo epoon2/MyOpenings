@@ -41,7 +41,11 @@ export function getStore(options) {
       return opts && opts.type === 'json' ? JSON.parse(raw) : raw;
     },
     async setJSON(key, value) { data.set(key, JSON.stringify(value)); },
-    async delete(key) { data.delete(key); }
+    async delete(key) { data.delete(key); },
+    async list(opts) {
+      const prefix = (opts && opts.prefix) || '';
+      return { blobs: [...data.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) };
+    }
   };
 }
 `);

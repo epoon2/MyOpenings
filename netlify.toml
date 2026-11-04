@@ -3,3 +3,16 @@
 
 [functions]
   directory = "netlify/functions"
+
+# Every calendar lives at its own address - /ethan, /maya - and they
+# are all the same page. A real file at that path (styles.css, the
+# icons) still wins, because this rule is not forced.
+[[redirects]]
+  from = "/dashboard"
+  to = "/dashboard.html"
+  status = 200
+
+[[redirects]]
+  from = "/:slug"
+  to = "/calendar.html"
+  status = 200

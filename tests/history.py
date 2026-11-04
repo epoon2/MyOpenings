@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8967
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -39,12 +40,12 @@ async def main():
         errs = []
         page.on("pageerror", lambda e: errs.append(str(e)))
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
 
         # ---- empty history reads as such
-        await page.click("#historyBtn"); await page.wait_for_timeout(500)
+        await page.evaluate("document.getElementById('historyBtn').click()"); await page.wait_for_timeout(500)
         shown = await page.evaluate("!document.getElementById('historyDrawerBackdrop').classList.contains('hidden')")
         empty = await page.text_content("#historyList")
         check("Version history opens and says only the current version exists", shown and "Only the current version" in empty, empty[:80])
@@ -78,7 +79,7 @@ async def main():
         check("the series is gone, Noah stays", await cards(page) == 1, f"cards={await cards(page)}")
 
         # ---- the version list: current on top, then the schedule at each earlier save
-        await page.click("#historyBtn"); await page.wait_for_timeout(600)
+        await page.evaluate("document.getElementById('historyBtn').click()"); await page.wait_for_timeout(600)
         rows = await steps(page)
         check("four rows: the current version, one per save, and the state before it all",
               [r["label"] for r in rows][:1] == ["Current version"] and len(rows) == 4
@@ -136,9 +137,9 @@ async def main():
               str([r["when"] for r in rows[:2]]))
 
         await page.click("#closeHistoryDrawerBtn"); await page.wait_for_timeout(300)
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(400)
-        check("leaving admin hides the Version history button",
-              await page.evaluate("document.getElementById('historyBtn').classList.contains('hidden')"))
+        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(400)
+        check("leaving admin hides the gear menu that holds Version history",
+              await page.evaluate("document.getElementById('toolsMenuWrap').classList.contains('hidden')"))
 
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]
         check("no page errors", not real, str(real[:3]))

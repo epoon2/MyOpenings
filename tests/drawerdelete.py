@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8963
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -37,7 +38,7 @@ async def main():
         errs = []
         page.on("pageerror", lambda e: errs.append(str(e)))
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
 
@@ -51,7 +52,7 @@ async def main():
             const nextTue = shift(tue, 7), nextThu = shift(tue, 9), afterTue = shift(tue, 14), afterThu = shift(tue, 16);
             await fetch('/api/events', { method: 'POST',
                 headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
-                body: JSON.stringify({ id: 'far-series', type: 'BLOCKED', title: 'Maya - Algebra II',
+                body: JSON.stringify({ type: 'BLOCKED', title: 'Maya - Algebra II',
                     start: nextTue + 'T16:00', end: nextTue + 'T17:00',
                     recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4], endType: 'NEVER' } }) });
             return { nextTue, nextThu, afterTue, afterThu, nextStart: shift(tue, 5), nextEnd: shift(tue, 11),

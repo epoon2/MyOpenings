@@ -12,6 +12,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8945
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 DAY_START = 8
 oks, fails = [], []
 def check(name, cond, extra=""):
@@ -58,7 +59,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
         page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
 
@@ -80,7 +81,7 @@ async def main():
         await page.evaluate("""async (anchor) => {
             await fetch('/api/events', { method: 'POST',
                 headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
-                body: JSON.stringify({ id: 'series-1', type: 'BLOCKED', title: 'Maya - Algebra II',
+                body: JSON.stringify({ type: 'BLOCKED', title: 'Maya - Algebra II',
                     start: anchor + 'T16:00', end: anchor + 'T17:00',
                     recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4],
                                   endType: 'NEVER' } }) });

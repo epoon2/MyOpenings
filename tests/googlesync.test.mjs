@@ -30,14 +30,16 @@ eq('UNTIL is the last second of the end date, in UTC', rruleUntil('2026-12-15'),
 const oneOff = { id: 'one', type: 'BLOCKED', title: 'Maya - Algebra II', notes: 'secret',
   start: '2026-09-11T10:00', end: '2026-09-11T11:30', recurrence: null };
 const g1 = buildGoogleEvent(oneOff);
-eq('a one-off is a plain Tutoring event in Los Angeles time', g1, {
-  summary: 'Tutoring', status: 'confirmed',
+eq('a one-off is a plain Blocked event in Los Angeles time', g1, {
+  summary: 'Blocked', status: 'confirmed',
   start: { dateTime: '2026-09-11T10:00:00', timeZone: 'America/Los_Angeles' },
   end: { dateTime: '2026-09-11T11:30:00', timeZone: 'America/Los_Angeles' },
   extendedProperties: { private: { tutoringId: 'one', tutoringSource: 'tutoring-availability' } }
 });
 ok('no name or notes reach Google', !JSON.stringify(g1).includes('Maya') && !JSON.stringify(g1).includes('secret'));
 ok('an unpainted block sets no colorId', !('colorId' in g1));
+eq('a name the owner typed for Google is the summary instead', buildGoogleEvent({ ...oneOff, googleTitle: 'Algebra with M.' }).summary, 'Algebra with M.');
+eq('a blank one falls back to Blocked', buildGoogleEvent({ ...oneOff, googleTitle: '   ' }).summary, 'Blocked');
 
 // ---- colors: the nearest of Google's eleven
 eq('the portal palette lands on sensible Google colors',
@@ -173,7 +175,7 @@ eq('an unseen event is tried as an update, then inserted with its derived id',
   calls.filter((c) => c.method !== 'TOKEN').map((c) => c.method + (c.id ? ':' + c.id : '')),
   ['PUT:' + gid, 'POST']);
 ok('the insert names the calendar and the id', calls[2].cal === 'ethan@example.com' && calls[2].body.id === gid);
-ok('what Google got is a plain Tutoring block', store.get(gid).summary === 'Tutoring' && !JSON.stringify(store.get(gid)).includes('Maya'));
+ok('what Google got is a plain Blocked block', store.get(gid).summary === 'Blocked' && !JSON.stringify(store.get(gid)).includes('Maya'));
 
 // edit it: now it exists on Google, so it is a single update
 calls.length = 0;
@@ -223,7 +225,7 @@ const missing = googleEventId(data.id);
 
 // resync: pushes what Google missed, removes what the portal no longer has
 broken = false;
-store.set('tdeadbeef', { summary: 'Tutoring', extendedProperties: { private: { tutoringSource: 'tutoring-availability' } } });
+store.set('tdeadbeef', { summary: 'Blocked', extendedProperties: { private: { tutoringSource: 'tutoring-availability' } } });
 calls.length = 0;
 res = await call('POST', '/google/resync', {});
 data = await res.json();

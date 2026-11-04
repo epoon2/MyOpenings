@@ -12,6 +12,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8981
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -78,7 +79,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
         page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
 
@@ -266,12 +267,14 @@ async def main():
         check("and saves purple", colors.get("5") == "#6d28d9", str(colors))
 
         # ---- the public page keeps red and green
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(700)
+        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(700)
         tinted = await page.evaluate("document.querySelectorAll('.event-card.tinted').length")
         check("the public view has no tinted cards", tinted == 0, str(tinted))
         body = await page.evaluate("fetch('/api/events?start=2020-01-01&end=2030-01-01').then(r => r.text())")
-        check("and the public API never mentions color", "color" not in body)
-        await page.click("#adminBtn"); await page.wait_for_timeout(700)
+        import json as _json
+        pub = _json.loads(body)
+        check("and the public API carries no block colors or presets - only the two defaults", "color" not in _json.dumps(pub["events"]) and "customColors" not in pub and "colors" in pub["config"])
+        await page.evaluate("document.getElementById('backToAdminBtn').click()"); await page.wait_for_timeout(700)
 
         # ---- delete All Mondays
         await rclick_weekday(page, 1)
@@ -294,7 +297,7 @@ async def main():
         await page.keyboard.press("Escape"); await page.wait_for_timeout(200)
 
         # ---- undo puts the Mondays (and their colors) back
-        await page.click("#undoBtn"); await page.wait_for_timeout(900)
+        await page.evaluate("document.getElementById('undoBtn').click()"); await page.wait_for_timeout(900)
         colors = await card_colors(page)
         check("undo restores the Mondays with their colors", colors.get("1") not in (None, "", "#1d4ed8"), str(colors))
 

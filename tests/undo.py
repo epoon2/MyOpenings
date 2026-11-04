@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8957
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -24,7 +25,7 @@ async def buttons(page):
         redo: !document.getElementById('redoBtn').disabled,
         undoTitle: document.getElementById('undoBtn').title,
         redoTitle: document.getElementById('redoBtn').title,
-        shown: !document.getElementById('undoBtn').classList.contains('hidden') })""")
+        shown: !document.getElementById('toolsMenuWrap').classList.contains('hidden') })""")
 
 async def rclick(page, selector):
     await page.evaluate("""(sel) => document.querySelector(sel).dispatchEvent(
@@ -50,7 +51,7 @@ async def main():
         errs = []
         page.on("pageerror", lambda e: errs.append(str(e)))
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         check("visitors never see Undo", not (await buttons(page))["shown"])
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
@@ -82,8 +83,11 @@ async def main():
         # ---- Ctrl+Shift+Z brings it back, Ctrl+Y works too
         await page.keyboard.press("Control+Shift+z"); await page.wait_for_timeout(900)
         check("Ctrl+Shift+Z redoes", await cards(page) == 1)
+        await page.click("#gearBtn"); await page.wait_for_timeout(150)
+        check("the gear menu holds Undo, enabled", not await page.evaluate("document.getElementById('toolsMenu').classList.contains('hidden')")
+              and not await page.evaluate("document.getElementById('undoBtn').disabled"))
         await page.click("#undoBtn"); await page.wait_for_timeout(900)
-        check("the Undo button undoes", await cards(page) == 0)
+        check("the Undo item undoes and closes the menu", await cards(page) == 0 and await page.evaluate("document.getElementById('toolsMenu').classList.contains('hidden')"))
         await page.keyboard.press("Control+y"); await page.wait_for_timeout(900)
         check("Ctrl+Y redoes as well", await cards(page) == 1)
 
@@ -96,7 +100,7 @@ async def main():
             const anchor = new Date(Date.UTC(y, m-1, d-7)).toISOString().slice(0,10);
             await fetch('/api/events', { method: 'POST',
                 headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
-                body: JSON.stringify({ id: 'series-1', type: 'BLOCKED', title: 'Noah - Geometry',
+                body: JSON.stringify({ type: 'BLOCKED', title: 'Noah - Geometry',
                     start: anchor + 'T16:00', end: anchor + 'T17:00',
                     recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4], endType: 'NEVER' } }) });
         }""")
@@ -166,7 +170,7 @@ async def main():
         await page.click("[data-close='eventModal']"); await page.wait_for_timeout(300)
 
         # ---- exit admin: buttons go
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(400)
+        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(400)
         check("leaving admin hides Undo and Redo", not (await buttons(page))["shown"])
 
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]

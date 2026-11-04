@@ -9,6 +9,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8946
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -29,7 +30,7 @@ async def main():
 
         # Seed on a desktop-sized page, and check desktop never sees the toggle.
         seed = await (await b.new_context(viewport={"width": 1400, "height": 950})).new_page()
-        await seed.goto(BASE, wait_until="networkidle")
+        await seed.goto(CAL, wait_until="networkidle")
         await seed.click("#adminBtn"); await seed.fill("#adminPasswordInput", "t")
         await seed.click("#loginSubmitBtn"); await seed.wait_for_timeout(700)
         await seed.evaluate("""async () => {
@@ -40,7 +41,7 @@ async def main():
                 body: JSON.stringify(body) });
             await post({ type: 'AVAILABLE', title: 'Open',
                 start: tue + 'T15:00', end: tue + 'T18:00' });
-            await post({ id: 'series-1', type: 'BLOCKED', title: 'Maya - Algebra II',
+            await post({ type: 'BLOCKED', title: 'Maya - Algebra II',
                 start: tue + 'T16:00', end: tue + 'T17:00',
                 recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4],
                               endType: 'NEVER' } });
@@ -57,14 +58,15 @@ async def main():
         errs = []
         phone.on("pageerror", lambda e: errs.append(str(e)))
         phone.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
-        await phone.goto(BASE, wait_until="networkidle")
+        await phone.goto(CAL, wait_until="networkidle")
         await phone.wait_for_timeout(700)
 
         st = await view_state(phone)
         check("phones open in the grid by default",
               st["calendar"] == "grid" and st["agenda"] == "none", str(st))
         check("the toggle is offered on phones", st["toggle"] != "none", str(st))
-        check("the week's schedule shows as cards", st["cards"] == 3, str(st))
+        # Tuesday: open before, booked, open after; Thursday: the booked session alone
+        check("the week's schedule shows as cards", st["cards"] == 4, str(st))
 
         await phone.click("#viewListBtn"); await phone.wait_for_timeout(300)
         st = await view_state(phone)
@@ -80,7 +82,7 @@ async def main():
         await phone.click("#viewGridBtn"); await phone.wait_for_timeout(300)
         st = await view_state(phone)
         check("Grid brings the week grid back", st["calendar"] == "grid"
-              and st["agenda"] == "none" and st["cards"] == 3, str(st))
+              and st["agenda"] == "none" and st["cards"] == 4, str(st))
 
         # Admin on the phone still gets the grid with its extra card.
         await phone.click("#adminBtn"); await phone.fill("#adminPasswordInput", "t")

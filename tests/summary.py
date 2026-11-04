@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8902
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 ok, fail = [], []
 def check(name, cond, extra=""):
     (ok if cond else fail).append(name)
@@ -19,7 +20,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
         page.on("console", lambda m: errs.append(m.text) if m.type=="error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput","t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(600)
 
@@ -75,6 +76,13 @@ async def main():
                   f"{rows[0]['when']!r} vs {label1}/{label2}")
             check("Devon shows 2 hrs, 1 session",
                   rows[1]["hours"].startswith("2 hr") and "1 session" in rows[1]["hours"], rows[1]["hours"])
+            lines = await page.evaluate("""() => [...document.querySelectorAll('.week-summary-student')[0].querySelectorAll('.week-summary-session')]
+                .map(l => l.getBoundingClientRect().top)""")
+            check("each of Maya's sessions sits on its own line", len(lines) == 2 and lines[1] > lines[0] + 10, str(lines))
+        check("the toggle reads Hide all students while the list is open, Show all students when closed",
+              await page.text_content("#summaryToggleLabel") == "Hide all students"
+              and (await page.click("#summaryToggle") or True) and await page.text_content("#summaryToggleLabel") == "Show all students")
+        await page.click("#summaryToggle"); await page.wait_for_timeout(200)
 
         # An empty week
         await page.click("#nextWeekBtn"); await page.wait_for_timeout(700)
@@ -88,7 +96,7 @@ async def main():
 
         # Public view must not show it
         await page.click("#prevWeekBtn"); await page.wait_for_timeout(500)
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(700)
+        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(700)
         check("summary hidden in public view",
               await page.evaluate("document.getElementById('weekSummary').classList.contains('hidden')"))
 

@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8944
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -26,7 +27,7 @@ async def main():
 
         # Seed as admin: last week's Tuesday gets availability with a
         # session inside it; this week's Tuesday gets availability too.
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
         await page.evaluate("""async () => {
@@ -44,17 +45,25 @@ async def main():
                 start: lastTue + 'T16:00', end: lastTue + 'T17:00' });
             await post({ type: 'AVAILABLE', title: 'Open',
                 start: tue + 'T15:00', end: tue + 'T18:00' });
+            // a booked session on a day with no open hours at all, next week
+            await post({ type: 'BLOCKED', title: 'Kai - piano',
+                start: shift(tue, 8) + 'T10:00', end: shift(tue, 8) + 'T11:00' });
         }""")
 
         # A fresh signed-out visitor.
         pub = await (await b.new_context(viewport={"width": 1400, "height": 950})).new_page()
         pub.on("pageerror", lambda e: errs.append(str(e)))
         pub.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
-        await pub.goto(BASE, wait_until="networkidle")
+        await pub.goto(CAL, wait_until="networkidle")
         await pub.wait_for_timeout(700)
 
         cards_now = await pub.locator(".event-card").count()
         check("visitor sees this week's availability", cards_now >= 1, f"cards={cards_now}")
+        await pub.click("#nextWeekBtn"); await pub.wait_for_timeout(700)
+        next_cards = await pub.evaluate("[...document.querySelectorAll('.event-card')].map(c => c.textContent.replace(/\\s+/g, ' ').trim())")
+        check("a booked session outside any open hours still shows as booked, unnamed",
+              len(next_cards) == 1 and "Blocked Session" in next_cards[0] and "Kai" not in next_cards[0], str(next_cards))
+        await pub.click("#todayBtn"); await pub.wait_for_timeout(700)
 
         # The now line: present exactly when the portal clock sits in
         # the visible hours, and always in today's (portal) column.

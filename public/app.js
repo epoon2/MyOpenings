@@ -1,5 +1,14 @@
 (() => {
 
+  /*
+    A built-in category beside the owner's own: the session stays on
+    the calendar, but the weekly summary leaves it out of its count.
+    Named categories get hex ids, so this never clashes with one.
+  */
+  const OMITTED =
+    'omitted';
+
+
   const state = {
 
     view:
@@ -21,16 +30,84 @@
     customColors:
       [],
 
+    /*
+      The kinds of booked time the owner counts apart - {id, name} -
+      and the copy of that list being edited in Settings.
+    */
+    categories:
+      [],
+    settingsCategories:
+      null,
+
+    /*
+      Which category the weekly summary's rows are narrowed to:
+      'all', a category id, 'none' for the uncategorized, or
+      OMITTED for the sessions left out of the count.
+    */
+    summaryCategory:
+      'all',
+
+    /*
+      The two default colours being edited in the settings dialog.
+    */
+    settingsColors:
+      null,
+
+    /*
+      The failed-email notice: which failure is on screen, and which
+      one the admin dismissed, so it does not come straight back.
+    */
+    shownMailError:
+      null,
+    dismissedMailError:
+      null,
+
+    /*
+      Set just below: startOfWeek reads the settings, which live here.
+    */
     weekStart:
-      startOfWeek(
-        new Date()
-      ),
+      null,
 
     adminPassword:
       '',
 
     isAdmin:
       false,
+
+    /*
+      The signed-in account, if any: the session token this device
+      holds, and what the server said about the account. The calendar
+      on screen is named by the address in the page's own URL.
+    */
+    session:
+      null,
+
+    account:
+      null,
+
+    calendarSlug:
+      slugFromLocation(),
+
+    /*
+      What the server said about the calendar itself: its address,
+      and whether an account owns it yet.
+    */
+    calendar:
+      null,
+
+    /*
+      The account's other calendars (from /me), which of them are
+      drawn over this one, and who owns each borrowed event id, so a
+      write to it goes to the right calendar.
+    */
+    myCalendars:
+      [],
+
+    overlays:
+      {},
+
+    overlayOwner:
+      {},
 
 
     /*
@@ -138,6 +215,20 @@
   };
 
 
+  state.weekStart =
+    startOfWeek(
+      new Date()
+    );
+
+
+  /*
+    A translated string, for what visitors read.
+  */
+  const t =
+    (key, vars) =>
+      window.I18N.t( key, vars );
+
+
   /*
     Public pages revalidate at most this
     often. The server tags the public
@@ -182,6 +273,10 @@
     bindButtons();
 
     resumeRememberedDevice();
+
+    installManifest();
+
+    initLanguage();
 
     loadWeek();
 
@@ -281,9 +376,8 @@
 
 
         closeContextMenu();
-
         closeTimeWheel();
-
+        closeProfileMenu();
       }
     );
 
@@ -594,6 +688,21 @@
           }
 
 
+          if ( ownsThisCalendar() ) {
+
+            state.preview =
+              false;
+
+            state.isAdmin =
+              true;
+
+            loadWeek();
+
+            return;
+
+          }
+
+
           openAdminLogin();
 
         }
@@ -603,14 +712,191 @@
     $('signOutBtn')
       .addEventListener(
         'click',
-        signOut
+        () => {
+          closeProfileMenu();
+          signOut();
+        }
       );
+    $('legacyLoginLink')
+      .addEventListener(
+        'click',
+        () => {
+          setLoginMode( state.loginMode === 'legacy' ? 'account' : 'legacy' );
+          setTimeout(
+            () => {
+              $( state.loginMode === 'legacy' ? 'adminPasswordInput' : 'loginEmailInput' ).focus();
+            },
+            30
+          );
+        }
+      );
+    $('resendVerifyBtn')
+      .addEventListener(
+        'click',
+        resendVerification
+      );
+    $('changePasswordBtn')
+      .addEventListener(
+        'click',
+        () => {
+          closeProfileMenu();
+          openChangePassword();
+        }
+      );
+    $('calendarsBtn')
+      .addEventListener(
+        'click',
+        () => {
+          const body =
+            document.querySelector( '.calendar-body' );
+          const open =
+            body.classList.toggle( 'panel-open' );
+          $('calendarsBtn').setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+        }
+      );
+    document.addEventListener(
+      'click',
+      () => {
+        closeToolsMenu();
+      }
+    );
+    $('savePasswordBtn')
+      .addEventListener(
+        'click',
+        savePassword
+      );
+    $('newPasswordAgainInput')
+      .addEventListener(
+        'keydown',
+        (keyEvent) => {
+          if ( keyEvent.key === 'Enter' ) {
+            savePassword();
+          }
+        }
+      );
+    $('settingPreset')
+      .addEventListener(
+        'change',
+        () => {
+          const preset =
+            WORDING_PRESETS[ $('settingPreset').value ];
+          if ( !preset ) {
+            return;
+          }
+          $('settingLabelAvailable').value = preset.available;
+          $('settingLabelBlocked').value = preset.blocked;
+          $('settingLabelPerson').value = preset.person;
+          $('settingLabelPeople').value = preset.people;
+        }
+      );
+    $('settingSlug')
+      .addEventListener(
+        'input',
+        () => {
+          renderShareLink( $('settingSlug').value.trim().toLowerCase() );
+        }
+      );
+    [ [ 'copyShareLinkBtn', 'shareLink' ], [ 'copyFeedLinkBtn', 'feedLink' ] ]
+      .forEach(
+        ([ buttonId, textId ]) => {
+          $(buttonId)
+            .addEventListener(
+              'click',
+              async () => {
+                try {
+                  await navigator.clipboard.writeText( $(textId).textContent );
+                  $(buttonId).textContent = t( 'copied' );
+                  setTimeout( () => { $(buttonId).textContent = t( 'copy' ); }, 1500 );
+                } catch (e) {
+                  setStatus( t( 'copy_by_selecting' ) );
+                }
+              }
+            );
+        }
+      );
+    $('backToAdminBtn')
+      .addEventListener(
+        'click',
+        () => {
+          if ( !state.isAdmin ) {
+            $('adminBtn').click();
+          }
+        }
+      );
+    $('profileBtn')
+      .addEventListener(
+        'click',
+        (clickEvent) => {
+          clickEvent.stopPropagation();
+          toggleProfileMenu();
+        }
+      );
+    $('themeBtn')
+      .addEventListener(
+        'click',
+        toggleTheme
+      );
+    renderThemeButton();
+    /*
+      A device that follows its own preference redraws when that
+      preference changes underneath the page.
+    */
+    if ( window.matchMedia ) {
+      window
+        .matchMedia( '(prefers-color-scheme: dark)' )
+        .addEventListener(
+          'change',
+          () => {
+            if ( !document.documentElement.getAttribute( 'data-theme' ) ) {
+              renderThemeButton();
+              applyConfigStyling();
+              renderAll();
+            }
+          }
+        );
+    }
+    /*
+      The gear menu: any choice closes it, as does a click elsewhere.
+    */
+    $('gearBtn')
+      .addEventListener(
+        'click',
+        (clickEvent) => {
+          clickEvent.stopPropagation();
+          toggleToolsMenu();
+        }
+      );
+    [ 'undoBtn', 'redoBtn', 'historyBtn', 'settingsBtn' ]
+      .forEach(
+        (id) => {
+          $(id)
+            .addEventListener(
+              'click',
+              closeToolsMenu
+            );
+        }
+      );
+    document.addEventListener(
+      'click',
+      (clickEvent) => {
+        if (
+          !clickEvent.target.closest ||
+          !clickEvent.target.closest( '#profileMenu' )
+        ) {
+          closeProfileMenu();
+        }
+      }
+    );
 
 
     $('exitAdminBtn')
       .addEventListener(
         'click',
-        exitAdmin
+        () => {
+          if ( state.isAdmin ) {
+            exitAdmin();
+          }
+        }
       );
 
 
@@ -662,6 +948,39 @@
       .addEventListener(
         'click',
         openHistory
+      );
+    $('settingsBtn')
+      .addEventListener(
+        'click',
+        openSettings
+      );
+    $('addCategoryBtn')
+      .addEventListener(
+        'click',
+        addCategoryRow
+      );
+    $('saveSettingsBtn')
+      .addEventListener(
+        'click',
+        saveSettings
+      );
+    $('testMailBtn')
+      .addEventListener(
+        'click',
+        sendTestMail
+      );
+    $('mailNoticeSettingsBtn')
+      .addEventListener(
+        'click',
+        () => {
+          hideMailNotice();
+          openSettings();
+        }
+      );
+    $('mailNoticeCloseBtn')
+      .addEventListener(
+        'click',
+        hideMailNotice
       );
 
 
@@ -851,11 +1170,9 @@
               .toggle( 'hidden' );
 
 
-          $('summaryToggle')
+          $('summaryToggleLabel')
             .textContent =
-              nowHidden
-                ? 'Show each student'
-                : 'Hide each student';
+              t( nowHidden ? 'show_all' : 'hide_all', { noun: peopleWord( 2 ) } );
 
 
           $('summaryToggle')
@@ -955,6 +1272,8 @@
           renderEditorColorRow(
             $('eventType').value
           );
+          syncGoogleTitleField();
+          syncCategoryField();
         }
       );
 
@@ -1050,12 +1369,36 @@
 
     } else if (
       state.isAdmin &&
+      state.session
+    ) {
+
+      headers.set(
+        'x-session',
+        state.session.token
+      );
+
+    } else if (
+      state.isAdmin &&
       state.adminToken
     ) {
 
       headers.set(
         'x-admin-token',
         state.adminToken
+      );
+
+    } else if (
+      state.session
+    ) {
+
+      /*
+        A visitor who is signed in elsewhere: the server tells the
+        page whose account this is, so the chip can offer the way to
+        their own calendar.
+      */
+      headers.set(
+        'x-session',
+        state.session.token
       );
 
     }
@@ -1131,6 +1474,28 @@
 
       }
 
+    }
+
+
+    /*
+      Every request names the calendar the page is showing; with no
+      address in the URL it is the first calendar. A write to an event
+      borrowed from another of the owner's calendars goes to that
+      calendar instead.
+    */
+    const target =
+      overlayCalendarFor( path, method, options.body ) ||
+      state.calendarSlug;
+    if ( target ) {
+      path +=
+        ( path.includes( '?' ) ? '&' : '?' ) +
+        'calendar=' +
+        encodeURIComponent( target );
+    }
+    if ( state.preview && !state.isAdmin && method === 'GET' ) {
+      path +=
+        ( path.includes( '?' ) ? '&' : '?' ) +
+        'preview=1';
     }
 
 
@@ -1386,14 +1751,14 @@
 
     undoBtn.title =
       history.undo
-        ? `Undo: ${history.undoLabel} (Ctrl+Z)`
-        : 'Nothing to undo';
+        ? t( 'undo_label', { label: history.undoLabel } )
+        : t( 'nothing_to_undo' );
 
 
     redoBtn.title =
       history.redo
-        ? `Redo: ${history.redoLabel} (Ctrl+Shift+Z)`
-        : 'Nothing to redo';
+        ? t( 'redo_label', { label: history.redoLabel } )
+        : t( 'nothing_to_redo' );
 
   }
 
@@ -1472,15 +1837,7 @@
 
 
       setStatus(
-        `${
-          which === 'undo'
-            ? 'Undid'
-            : 'Redid'
-        }: ${
-          entry
-            ? entry.label
-            : 'change'
-        }.`
+        t( which === 'undo' ? 'undid' : 'redid', { label: entry ? entry.label : t( 'change' ) } )
       );
 
     } catch (error) {
@@ -1715,7 +2072,7 @@
 
 
       empty.textContent =
-        'Only the current version so far. Every save from here on adds one.';
+        t( 'only_current' );
 
 
       list.appendChild(
@@ -1827,12 +2184,12 @@
 
     when.textContent =
       current
-        ? 'Current version'
+        ? t( 'current_version' )
         : producedBy
           ? formatVersionTime(
               producedBy.at
             )
-          : 'Before recorded history';
+          : t( 'before_history' );
 
 
     const label =
@@ -1952,11 +2309,11 @@
 
 
           restore.textContent =
-            'Restore just this';
+            t( 'restore_just_this' );
 
 
           restore.title =
-            'Put this session back as it was, leaving everything else alone';
+            t( 'restore_just_this_hint' );
 
 
           restore.addEventListener(
@@ -2009,11 +2366,11 @@
 
 
       restore.textContent =
-        'Restore this version';
+        t( 'restore_version' );
 
 
       restore.title =
-        'Make the schedule exactly what it was at this point';
+        t( 'restore_version_hint' );
 
 
       restore.addEventListener(
@@ -2080,8 +2437,9 @@
 
     const time =
       date.toLocaleTimeString(
-        undefined,
+        I18N.locale(),
         {
+          hour12: !is24h(),
           hour:
             'numeric',
 
@@ -2093,13 +2451,13 @@
 
     if ( sameDay ) {
 
-      return `Today, ${time}`;
+      return t( 'today_at', { time } );
 
     }
 
 
     return date.toLocaleDateString(
-      undefined,
+      I18N.locale(),
       {
         month:
           'short',
@@ -2170,8 +2528,8 @@
 
       setStatus(
         result.unchanged
-          ? 'That version is already the current schedule.'
-          : `Restored the version from ${whenLabel}.`
+          ? t( 'already_current' )
+          : t( 'restored_version', { when: whenLabel } )
       );
 
 
@@ -2257,11 +2615,7 @@
 
 
       setStatus(
-        `Restored ${
-          shortTitle(
-            item
-          )
-        }.`
+        t( 'restored_item', { title: shortTitle( item ) } )
       );
 
     } catch (error) {
@@ -2465,7 +2819,7 @@
 
     const dayLabel =
       day.toLocaleDateString(
-        undefined,
+        I18N.locale(),
         {
           weekday:
             'short',
@@ -2690,7 +3044,7 @@
 
 
     showSyncNotice(
-      'Saved here, but Google Calendar was not updated' +
+      t( 'saved_not_google' ) +
       (
         sync.error
           ? ` (${sync.error}).`
@@ -2768,7 +3122,7 @@
 
 
     setStatus(
-      'Syncing Google Calendar…'
+      t( 'syncing_google' )
     );
 
 
@@ -2792,13 +3146,7 @@
       ) {
 
         showSyncNotice(
-          `Google Calendar is up to date: ${
-            result.pushed
-          } session${
-            result.pushed === 1
-              ? ''
-              : 's'
-          } pushed` +
+          t( 'google_up_to_date', { count: t( result.pushed === 1 ? 'sessions_n' : 'sessions_np', { n: result.pushed } ) } ) +
           (
             result.removed
               ? `, ${result.removed} stale removed.`
@@ -2812,7 +3160,7 @@
       ) {
 
         showSyncNotice(
-          'Google Calendar sync is not set up on this site.',
+          t( 'google_not_set_up' ),
           false
         );
 
@@ -2826,7 +3174,7 @@
 
 
         showSyncNotice(
-          `Google Calendar sync did not finish` +
+          t( 'google_did_not_finish' ) +
           (
             failed
               ? ` - ${failed} session${
@@ -2882,7 +3230,7 @@
     ) {
 
       setStatus(
-        'Loading…'
+        t( 'loading' )
       );
 
     }
@@ -2910,15 +3258,46 @@
         );
 
 
-      const data =
-        await api(
-          `/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
-        );
+      let data;
+      try {
+        const shown =
+          state.isAdmin ? shownOverlays() : [];
+        data =
+          await api(
+            `/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+            ( shown.length ? `&with=${ encodeURIComponent( shown.join( ',' ) ) }` : '' )
+          );
+      } catch (error) {
+        if (
+          error.status === 404 &&
+          error.data &&
+          ( error.data.missing || error.data.unpublished )
+        ) {
+          showMissingCalendar( error.data );
+          return;
+        }
+        throw error;
+      }
 
 
-      state.events =
+            state.events =
         data.events ||
         [];
+
+
+      state.calendar =
+        data.calendar ||
+        state.calendar;
+      mergeOverlays(
+        data.overlays || {}
+      );
+      if ( data.session === 'invalid' ) {
+        forgetSession();
+      }
+      state.account =
+        data.account ||
+        null;
+      renderVerifyNotice();
 
 
       /*
@@ -2938,8 +3317,9 @@
           {}
         )
       };
-
-
+      syncLanguage();
+      applyConfigStyling();
+      renderProfileChip();
       if (
         state.isAdmin &&
         data.mode !== 'admin' &&
@@ -2948,6 +3328,22 @@
       ) {
 
         forgetDevice();
+
+      }
+
+
+      /*
+        Signed in, but this is somebody else's calendar: a visitor
+        here, with a way to their own.
+      */
+      if (
+        state.isAdmin &&
+        data.mode !== 'admin' &&
+        state.session
+      ) {
+
+        state.isAdmin =
+          false;
 
       }
 
@@ -2967,6 +3363,13 @@
             .map( normalizeHex )
             .filter( Boolean );
       }
+      if ( Array.isArray( data.categories ) ) {
+        state.categories =
+          data.categories;
+      }
+      applyMailStatus(
+        data.mail
+      );
 
 
       /*
@@ -3002,18 +3405,14 @@
 
       $('timezoneLabel')
         .textContent =
-          state.config
-            .timezoneLabel;
+          localizedTimezoneLabel();
 
 
-      $('updatedLabel')
+            $('updatedLabel')
         .textContent =
           data.lastUpdated
-            ? `${state.config.tutorName} last updated the schedule ` +
-              formatUpdated(
-                data.lastUpdated
-              )
-            : `${state.config.tutorName} has not saved any times yet`;
+            ? t( 'updated_by', { owner: state.config.tutorName, when: formatUpdated( data.lastUpdated ) } )
+            : t( 'not_saved', { owner: state.config.tutorName } );
 
 
       state.lastLoadedAt =
@@ -3094,39 +3493,97 @@
       );
 
 
-    $('undoBtn')
+    $('toolsMenuWrap')
       .classList
       .toggle(
         'hidden',
         !state.isAdmin
       );
-
-
-    $('redoBtn')
+    if ( !state.isAdmin ) {
+      closeToolsMenu();
+    }
+    /*
+      Signed in is either admin mode or a remembered device looking at
+      the visitor view; either way the chip stands in for the Log in
+      button, and its menu offers the way across.
+    */
+    const signedIn =
+      state.isAdmin ||
+      Boolean( state.adminToken ) ||
+      Boolean( state.session );
+    $('profileMenu')
       .classList
       .toggle(
         'hidden',
-        !state.isAdmin
+        !signedIn
       );
-
-
-    $('historyBtn')
+    /*
+      The Admin view / Public view switch sits on the calendar toolbar
+      whenever there is a way back: in admin mode, or on a remembered
+      device looking at the public view of its own calendar.
+    */
+    $('modeSwitch')
       .classList
       .toggle(
         'hidden',
-        !state.isAdmin
+        !( state.isAdmin || Boolean( state.adminToken ) || ownsThisCalendar() )
       );
-
-
+    $('myCalendarLink')
+      .classList
+      .toggle(
+        'hidden',
+        !( state.session && state.account && !ownsThisCalendar() )
+      );
+    $('dashboardLink')
+      .classList
+      .toggle(
+        'hidden',
+        !( state.session && state.account )
+      );
+    $('accountsLink')
+      .classList
+      .toggle(
+        'hidden',
+        !( state.session && state.account && state.account.master )
+      );
+    if ( state.isAdmin && state.session ) {
+      loadMyCalendars();
+    }
+    renderCalendarsMenu();
+    if ( state.account ) {
+      $('myCalendarLink').href =
+        '/' + state.account.slug;
+    }
+    $('backToAdminBtn')
+      .setAttribute( 'aria-pressed', state.isAdmin ? 'true' : 'false' );
+    $('exitAdminBtn')
+      .setAttribute( 'aria-pressed', state.isAdmin ? 'false' : 'true' );
     $('signOutBtn')
       .classList
       .toggle(
         'hidden',
-        !(
-          state.isAdmin &&
-          state.adminToken
-        )
+        !signedIn
       );
+    $('profileMenuMode')
+      .textContent =
+        state.isAdmin
+          ? roleName()
+          : ( ownsThisCalendar() || state.adminToken || !state.account )
+            ? t( 'public_view_btn' )
+            : t( 'someones_calendar' );
+    /*
+      Only an account has a password of its own to change.
+    */
+    $('changePasswordBtn')
+      .classList
+      .toggle(
+        'hidden',
+        !( state.session && state.account )
+      );
+    renderProfileChip();
+    if ( !signedIn ) {
+      closeProfileMenu();
+    }
 
 
     if ( !state.isAdmin ) {
@@ -3158,17 +3615,94 @@
       .classList
       .toggle(
         'hidden',
-        state.isAdmin
+        signedIn
       );
-
-
     $('requestBtn')
       .classList
       .toggle(
         'hidden',
-        state.isAdmin
+        state.isAdmin ||
+        !requestsOpen()
       );
+  }
 
+
+  /*
+    Whether visitors may ask for a session here at all.
+  */
+  function requestsOpen() {
+    return !state.config.requests || state.config.requests.enabled !== false;
+  }
+
+
+  /*
+    The rules a request must meet, in one line under the form's
+    introduction - only the ones that are not the defaults.
+  */
+  function describeRequestRules(
+    rules
+  ) {
+    const parts =
+      [];
+    const length =
+      (minutes) =>
+        minutes % 60 === 0
+          ? ( minutes / 60 === 1 ? '1 hour' : ( minutes / 60 ) + ' hours' )
+          : minutes > 60
+            ? Math.floor( minutes / 60 ) + ' h ' + ( minutes % 60 ) + ' min'
+            : minutes + ' minutes';
+    if ( rules.minNoticeHours > 0 ) {
+      parts.push( 'at least ' + length( rules.minNoticeHours * 60 ) + "' notice" );
+    }
+    if ( rules.maxWeeksAhead && rules.maxWeeksAhead < 12 ) {
+      parts.push( 'up to ' + ( rules.maxWeeksAhead === 1 ? 'one week' : rules.maxWeeksAhead + ' weeks' ) + ' ahead' );
+    }
+    if ( ( rules.minMinutes && rules.minMinutes > 15 ) || ( rules.maxMinutes && rules.maxMinutes < 480 ) ) {
+      parts.push( 'sessions of ' + length( rules.minMinutes || 15 ) + ' to ' + length( rules.maxMinutes || 480 ) );
+    }
+    if ( !parts.length ) {
+      return '';
+    }
+    return 'Requests need ' + parts.join( ', ' ) + '.';
+  }
+
+  /*
+    The profile chip: the first letter of the display name in a
+    circle, the name beside it. Signed-in visitors and admins alike.
+  */
+  function renderProfileChip() {
+    const name =
+      (
+        ( state.account && !ownsThisCalendar() )
+          ? state.account.displayName
+          : state.config.tutorName || 'Admin'
+      ).trim() || 'Admin';
+    $('profileInitial').textContent =
+      name.charAt( 0 ).toUpperCase();
+    $('profileName').textContent =
+      name;
+    $('profileMenuName').textContent =
+      name;
+  }
+
+  function toggleProfileMenu() {
+    const open =
+      $('profileDropdown')
+        .classList
+        .contains( 'hidden' );
+    $('profileDropdown')
+      .classList
+      .toggle( 'hidden', !open );
+    $('profileBtn')
+      .setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+  }
+
+  function closeProfileMenu() {
+    $('profileDropdown')
+      .classList
+      .add( 'hidden' );
+    $('profileBtn')
+      .setAttribute( 'aria-expanded', 'false' );
   }
 
 
@@ -3283,11 +3817,17 @@
     );
 
 
+    /*
+      The download icon keeps its picture; its tooltip names the view
+      it will save, and the file gets the same name (see downloadName).
+    */
+    const saveLabel =
+      t( 'screenshot_view', { view: t( 'view_' + VIEW_WORD[ state.view ] ) } );
     $('saveWeekBtn')
-      .textContent =
-        'Screenshot ' +
-        VIEW_WORD[ state.view ] +
-        ' schedule';
+      .title =
+        saveLabel;
+    $('saveWeekBtn')
+      .setAttribute( 'aria-label', saveLabel );
 
   }
 
@@ -3662,11 +4202,14 @@
     }
 
 
-    const byStudent =
-      new Map();
+    /*
+      Every booked session of the week, once, with what the rows and
+      the counts need: who, how long, when, which category, what
+      color it is drawn in.
+    */
 
-
-    let totalMinutes = 0;
+    const sessions =
+      [];
 
 
     for ( let day = 0; day < 7; day++ ) {
@@ -3695,56 +4238,132 @@
             }
 
 
-            const minutes =
-              Math.max(
-                0,
-                endMin - startMin
-              );
-
-
-            totalMinutes += minutes;
-
-
-            const name =
-              summaryStudentName( event );
-
-
-            if ( !byStudent.has( name ) ) {
-
-              byStudent.set(
-                name,
-                {
-                  name,
-                  minutes: 0,
-                  sessions: [],
-                  colors: new Map()
-                }
-              );
-            }
-            const record =
-              byStudent.get( name );
-            record.minutes += minutes;
-            record.sessions.push({
+            sessions.push({
+              name:
+                summaryStudentName( event ),
+              minutes:
+                Math.max( 0, endMin - startMin ),
               date,
               startMin,
-              endMin
+              endMin,
+              category:
+                event.category === OMITTED ||
+                categoryName( event.category )
+                  ? event.category
+                  : '',
+              hex:
+                normalizeHex( event.color ) ||
+                defaultColorFor( 'BLOCKED' )
             });
-            /*
-              The color most of this student's time is drawn in
-              marks their row; the default red counts as a color.
-            */
-            const hex =
-              normalizeHex( event.color ) ||
-              defaultColorFor( 'BLOCKED' );
-            record.colors.set(
-              hex,
-              ( record.colors.get( hex ) || 0 ) + minutes
-            );
 
           }
         );
 
     }
+
+
+    /*
+      Omitted sessions stay on the calendar but out of the count:
+      not in the total, the students, or the rows under "All".
+    */
+
+    const counted =
+      sessions.filter(
+        (session) =>
+          session.category !== OMITTED
+      );
+
+
+    const totalMinutes =
+      counted.reduce(
+        (sum, session) =>
+          sum + session.minutes,
+        0
+      );
+
+
+    const byCategory =
+      new Map();
+
+
+    sessions.forEach(
+      (session) => {
+        byCategory.set(
+          session.category,
+          ( byCategory.get( session.category ) || 0 ) + session.minutes
+        );
+      }
+    );
+
+
+    /*
+      The chosen category filters the rows below; "All" is the
+      default, and a category that no longer exists falls back to it.
+    */
+
+    if (
+      state.summaryCategory !== 'all' &&
+      state.summaryCategory !== 'none' &&
+      state.summaryCategory !== OMITTED &&
+      !categoryName( state.summaryCategory )
+    ) {
+
+      state.summaryCategory =
+        'all';
+
+    }
+
+
+    const chosen =
+      state.summaryCategory;
+
+
+    const shown =
+      chosen === 'all'
+        ? counted
+        : sessions.filter(
+            (session) =>
+              session.category === ( chosen === 'none' ? '' : chosen )
+          );
+
+
+    const byStudent =
+      new Map();
+
+
+    shown.forEach(
+      (session) => {
+
+        if ( !byStudent.has( session.name ) ) {
+
+          byStudent.set(
+            session.name,
+            {
+              name: session.name,
+              minutes: 0,
+              sessions: [],
+              colors: new Map()
+            }
+          );
+
+        }
+
+
+        const record =
+          byStudent.get( session.name );
+        record.minutes += session.minutes;
+        record.sessions.push( session );
+        /*
+          The color most of this student's time is drawn in
+          marks their row; the default red counts as a color.
+        */
+        record.colors.set(
+          session.hex,
+          ( record.colors.get( session.hex ) || 0 ) + session.minutes
+        );
+
+      }
+    );
 
 
     $('summaryHours')
@@ -3754,7 +4373,13 @@
 
     $('summaryStudents')
       .textContent =
-        String( byStudent.size );
+        String( new Set( counted.map( (session) => session.name ) ).size );
+
+
+    renderSummaryCategories(
+      byCategory,
+      totalMinutes
+    );
 
 
     const list =
@@ -3776,7 +4401,9 @@
 
 
       empty.textContent =
-        'Nothing blocked off this week.';
+        chosen === 'all'
+          ? t( 'nothing_blocked_week' )
+          : t( 'nothing_in_category', { name: chosen === 'none' ? t( 'summary_uncategorized' ) : chosen === OMITTED ? t( 'summary_omitted' ) : categoryName( chosen ) } );
 
 
       list.appendChild( empty );
@@ -3833,10 +4460,15 @@
                 (a, b) =>
                   b[1] - a[1]
               )[0];
+          const shades =
+            cardShades( dominant[0] );
           dot.style.setProperty(
             '--dot',
-            cardShades( dominant[0] ).ink
+            shades.ink
           );
+          item.style.setProperty( '--row-edge', shades.border );
+          item.style.setProperty( '--row-tint', shades.tint );
+          item.style.setProperty( '--row-ink', shades.ink );
           dot.title =
             colorName( dominant[0] );
           who.append(
@@ -3872,6 +4504,11 @@
           head.appendChild( hours );
 
 
+          /*
+            One session to a line: a week of them read as a column,
+            not a run-on.
+          */
+
           const when =
             document
               .createElement( 'div' );
@@ -3881,15 +4518,23 @@
             'week-summary-sessions';
 
 
-          when.textContent =
-            record.sessions
-              .sort(
-                (a, b) =>
-                  a.date - b.date ||
-                  a.startMin - b.startMin
-              )
-              .map( summarySessionLabel )
-              .join( ' · ' );
+          record.sessions
+            .sort(
+              (a, b) =>
+                a.date - b.date ||
+                a.startMin - b.startMin
+            )
+            .forEach(
+              (session) => {
+                const line =
+                  document.createElement( 'div' );
+                line.className =
+                  'week-summary-session';
+                line.textContent =
+                  summarySessionLabel( session );
+                when.appendChild( line );
+              }
+            );
 
 
           item.appendChild( head );
@@ -3906,13 +4551,97 @@
 
 
   /*
-    Titles are written as "Maya - Algebra II"
-    or "Maya (online)", so the name is what
-    comes before the first separator. An
-    untitled block is still time spent and is
-    grouped under one heading rather than
-    dropped.
+    One count per category the owner named, in the order named, and
+    "Uncategorized" for booked time filed under none - shown only
+    once there is at least one category to count apart. "All" comes
+    first and is the default; each count is a button that narrows
+    the rows below to that category. "Omitted" comes last, apart
+    from the total, whenever the week has any.
   */
+  function renderSummaryCategories(
+    byCategory,
+    totalMinutes
+  ) {
+    const box =
+      $('summaryCategories');
+    box.innerHTML = '';
+    if (
+      !state.categories.length &&
+      !byCategory.get( OMITTED )
+    ) {
+      box.classList.add( 'hidden' );
+      return;
+    }
+    box.classList.remove( 'hidden' );
+    const rows =
+      [
+        {
+          key: 'all',
+          name: t( 'summary_all' ),
+          minutes: totalMinutes
+        },
+        ...state.categories.map(
+          (category) => ({
+            key: category.id,
+            name: category.name,
+            minutes: byCategory.get( category.id ) || 0
+          })
+        )
+      ];
+    if (
+      state.categories.length &&
+      byCategory.get( '' )
+    ) {
+      rows.push({
+        key: 'none',
+        name: t( 'summary_uncategorized' ),
+        minutes: byCategory.get( '' )
+      });
+    }
+    if ( byCategory.get( OMITTED ) ) {
+      rows.push({
+        key: OMITTED,
+        name: t( 'summary_omitted' ),
+        minutes: byCategory.get( OMITTED )
+      });
+    }
+    rows.forEach(
+      (row) => {
+        const chip =
+          document.createElement( 'button' );
+        chip.type = 'button';
+        chip.className =
+          'week-summary-category' +
+          ( row.key === 'none' ? ' none' : '' ) +
+          ( row.key === OMITTED ? ' omitted' : '' );
+        chip.dataset.category =
+          row.key;
+        chip.setAttribute(
+          'aria-pressed',
+          state.summaryCategory === row.key ? 'true' : 'false'
+        );
+        const number =
+          document.createElement( 'strong' );
+        number.textContent =
+          formatHours( row.minutes );
+        const label =
+          document.createElement( 'span' );
+        label.textContent =
+          t( 'category_hours', { name: row.name } );
+        chip.append( number, label );
+        chip.addEventListener(
+          'click',
+          () => {
+            state.summaryCategory =
+              row.key;
+            renderWeekSummary();
+          }
+        );
+        box.appendChild( chip );
+      }
+    );
+  }
+
 
   function summaryStudentName(
     event
@@ -3950,7 +4679,7 @@
     const day =
       session.date
         .toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             weekday: 'short'
           }
@@ -4014,7 +4743,7 @@
       $('weekLabel')
         .textContent =
           state.weekStart.toLocaleDateString(
-            undefined,
+            I18N.locale(),
             {
               weekday: 'long',
               month: 'long',
@@ -4033,7 +4762,7 @@
       $('weekLabel')
         .textContent =
           state.weekStart.toLocaleDateString(
-            undefined,
+            I18N.locale(),
             {
               month: 'long',
               year: 'numeric'
@@ -4056,7 +4785,7 @@
       .textContent =
         state.weekStart
           .toLocaleDateString(
-            undefined,
+            I18N.locale(),
             {
               month:
                 'short',
@@ -4067,7 +4796,7 @@
           ) +
         ' – ' +
         end.toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             month:
               'short',
@@ -4453,7 +5182,7 @@
       head.innerHTML =
         `<div class="dow">${
           date.toLocaleDateString(
-            undefined,
+            I18N.locale(),
             {
               weekday:
                 'short'
@@ -4506,8 +5235,19 @@
 
 
       label.className =
-        'time-label';
-
+        'time-label' +
+        /*
+          The first and last labels sit on the grid's edges, where a
+          centred label would be half outside it - so they hang below
+          the top line and above the bottom one instead.
+        */
+        (
+          hour === startHour
+            ? ' first'
+            : hour === endHour
+              ? ' last'
+              : ''
+        );
 
       label.style.top =
         (
@@ -4685,7 +5425,8 @@
                 startMin,
                 endMin,
                 startHour,
-                endHour
+                endHour,
+                dateStr
               );
 
 
@@ -4805,7 +5546,8 @@
     segmentStartMin,
     segmentEndMin,
     startHour,
-    endHour
+    endHour,
+    dateStr
   ) {
 
     const visibleStart =
@@ -4899,9 +5641,16 @@
     card.style.top =
       top +
       'px';
-    card.style.height =
+    /*
+      The length goes in as a custom property rather than a height,
+      so the stylesheet can let a card grow under the pointer to show
+      all of its text and still hold it to its own length.
+    */
+    card.style.setProperty(
+      '--card-height',
       height +
-      'px';
+      'px'
+    );
     applyEventColor(
       card,
       event
@@ -4915,19 +5664,9 @@
       state.isAdmin
         ? (
             event.title ||
-            (
-              event.type ===
-              'BLOCKED'
-                ? 'Blocked Session'
-                : 'Available'
-            )
+            labelFor( event.type )
           )
-        : (
-            event.type ===
-            'BLOCKED'
-              ? 'Blocked Session'
-              : 'Available'
-          );
+        : labelFor( event.type );
 
 
     const titleElement =
@@ -4961,10 +5700,40 @@
       );
 
 
-    card.append(
+        card.append(
       titleElement,
       timeElement
     );
+    /*
+      The details are built the first time a pointer arrives, not
+      for every card on every render: most are never opened.
+    */
+    card.addEventListener(
+      'mouseenter',
+      () => {
+        card.appendChild(
+          eventDetails(
+            event,
+            dateStr
+          )
+        );
+      },
+      { once: true }
+    );
+    if ( event.overlay ) {
+      card.classList.add( 'overlay' );
+      card.dataset.calendar =
+        event.overlay;
+      card.title =
+        event.overlayTitle || event.overlay;
+      const tag =
+        document.createElement( 'div' );
+      tag.className =
+        'overlay-tag';
+      tag.textContent =
+        event.overlayTitle || event.overlay;
+      card.appendChild( tag );
+    }
 
 
     /*
@@ -5003,6 +5772,14 @@
         'dragstart',
         (dragEvent) => {
 
+          /*
+            A card in hand gives up its grown-under-the-pointer
+            shape, or it would catch the drop itself.
+          */
+
+          card.classList.add( 'dragging' );
+
+
           state.draggingId =
             original.masterId ||
             original.id;
@@ -5010,16 +5787,16 @@
 
           state.draggingOccurrence =
             recurring
-              ? event
+              ? wholeOccurrence( event )
               : null;
 
 
           state.draggingDuration =
             localDateTimeToMinuteKey(
-              event.end
+              wholeOccurrence( event ).end
             ) -
             localDateTimeToMinuteKey(
-              event.start
+              wholeOccurrence( event ).start
             );
 
 
@@ -5077,6 +5854,8 @@
       card.addEventListener(
         'dragend',
         () => {
+
+          card.classList.remove( 'dragging' );
 
           removeDragGhost();
 
@@ -5178,7 +5957,7 @@
             openEventModal(
               original,
               recurring
-                ? event
+                ? wholeOccurrence( event )
                 : original
             );
 
@@ -5195,7 +5974,7 @@
           handleCardContextMenu(
             menuEvent,
             original,
-            event
+            wholeOccurrence( event )
           );
 
         }
@@ -5208,6 +5987,230 @@
 
   }
 
+
+
+  /*
+    A fragment of open time - the part of one block left on either
+    side of a booked session - is a drawing, not a record. Whatever
+    edits, moves, copies or deletes it must act on the whole block
+    (the whole occurrence, for a series) it was cut from, or the
+    pieces on the other side of the booking would be lost.
+  */
+  function wholeOccurrence(
+    event
+  ) {
+    if ( !event || !event.displayId ) {
+      return event;
+    }
+    const id =
+      event.masterId ||
+      event.id;
+    const start =
+      localDateTimeToMinuteKey( event.start );
+    const end =
+      localDateTimeToMinuteKey( event.end );
+    return state.events.find(
+      (item) =>
+        ( item.masterId || item.id ) === id &&
+        localDateTimeToMinuteKey( item.start ) <= start &&
+        localDateTimeToMinuteKey( item.end ) >= end
+    ) || getOriginalEvent( event );
+  }
+
+
+  /*
+    What a card shows once it has grown under the pointer, the way a
+    calendar app opens a session up: the full date (the time is on
+    the card already), and for the owner the repeat rule, the
+    category and the notes. A visitor's events carry none of those,
+    so a visitor sees the date alone. The block is added the first
+    time a pointer arrives, and the stylesheet shows it only while
+    the pointer rests.
+  */
+
+  function eventDetails(
+    event,
+    dateStr
+  ) {
+
+    const box =
+      document.createElement( 'div' );
+
+    box.className =
+      'event-details';
+
+
+    const line = (className, text) => {
+
+      if ( !text ) {
+        return;
+      }
+
+      const row =
+        document.createElement( 'div' );
+
+      row.className =
+        'event-detail ' + className;
+
+      row.textContent =
+        text;
+
+      box.appendChild( row );
+
+    };
+
+
+    line(
+      'event-detail-when',
+      describeDay( dateStr )
+    );
+
+
+    if ( state.isAdmin ) {
+
+      line(
+        'event-detail-repeat',
+        describeRule( event.recurrence )
+      );
+
+      const category =
+        event.category === OMITTED
+          ? t( 'summary_omitted' )
+          : categoryName( event.category );
+
+      line(
+        'event-detail-category',
+        category
+          ? t( 'hover_category', { name: category } )
+          : ''
+      );
+
+      line(
+        'event-detail-notes',
+        String( event.notes || '' ).trim()
+      );
+
+    }
+
+
+    return box;
+
+  }
+
+
+  /*
+    "Tuesday, October 6", in the visitor's language.
+  */
+
+  function describeDay(
+    dateStr
+  ) {
+
+    const match =
+      /^(\d{4})-(\d{2})-(\d{2})/.exec( dateStr || '' );
+
+    if ( !match ) {
+      return '';
+    }
+
+    return new Date(
+      Number( match[1] ),
+      Number( match[2] ) - 1,
+      Number( match[3] )
+    ).toLocaleDateString(
+      I18N.locale(),
+      {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      }
+    );
+
+  }
+
+
+  /*
+    "Repeats weekly on Tue, Thu, until Dec 18, 2026" - the rule in
+    the visitor's words, with the days named by the browser. Nothing
+    for a one-off.
+  */
+
+  function describeRule(
+    recurrence
+  ) {
+
+    if (
+      !recurrence ||
+      !Array.isArray( recurrence.weekdays ) ||
+      !recurrence.weekdays.length
+    ) {
+      return '';
+    }
+
+
+    const sunday =
+      new Date( 2026, 0, 4 );
+
+    const days =
+      recurrence.weekdays
+        .slice()
+        .sort( (a, b) => a - b )
+        .map(
+          (d) =>
+            addDays( sunday, d ).toLocaleDateString(
+              I18N.locale(),
+              { weekday: 'short' }
+            )
+        )
+        .join( ', ' );
+
+
+    let text =
+      recurrence.interval > 1
+        ? t( 'hover_repeats_every', { n: recurrence.interval, days } )
+        : t( 'hover_repeats_weekly', { days } );
+
+
+    if (
+      recurrence.endType === 'ON' &&
+      recurrence.until
+    ) {
+
+      const until =
+        /^(\d{4})-(\d{2})-(\d{2})/.exec( recurrence.until );
+
+      if ( until ) {
+
+        text +=
+          ', ' +
+          t( 'hover_until', {
+            date: new Date(
+              Number( until[1] ),
+              Number( until[2] ) - 1,
+              Number( until[3] )
+            ).toLocaleDateString(
+              I18N.locale(),
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            )
+          } );
+
+      }
+
+    } else if (
+      recurrence.endType === 'COUNT' &&
+      recurrence.count
+    ) {
+
+      text +=
+        ', ' +
+        t( 'hover_times', { n: recurrence.count } );
+
+    }
+
+
+    return text;
+
+  }
 
 
   function getOriginalEvent(
@@ -5303,7 +6306,7 @@
 
       heading.textContent =
         date.toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             weekday:
               'long',
@@ -5338,8 +6341,8 @@
 
         empty.textContent =
           state.isAdmin
-            ? 'No events'
-            : 'No availability';
+            ? t( 'no_events' )
+            : t( 'no_availability' );
 
 
         section.appendChild(
@@ -5405,19 +6408,9 @@
               state.isAdmin
                 ? (
                     event.title ||
-                    (
-                      event.type ===
-                      'BLOCKED'
-                        ? 'Blocked Session'
-                        : 'Available'
-                    )
+                    labelFor( event.type )
                   )
-                : (
-                    event.type ===
-                    'BLOCKED'
-                      ? 'Blocked Session'
-                      : 'Available'
-                  );
+                : labelFor( event.type );
 
 
             meta.className =
@@ -5439,10 +6432,7 @@
 
 
             right.textContent =
-              event.type ===
-              'BLOCKED'
-                ? 'Blocked'
-                : 'Open';
+              labelFor( event.type );
 
 
             left.append(
@@ -5470,7 +6460,7 @@
                       event
                     ),
                     event.masterId
-                      ? event
+                      ? wholeOccurrence( event )
                       : undefined
                   );
 
@@ -5586,7 +6576,7 @@
 
     $('blockedListStatus')
       .textContent =
-        'Loading blocked sessions…';
+        t( 'loading_blocked' );
 
 
     $('pastBlockedList')
@@ -5647,8 +6637,7 @@
 
       $('upcomingBlockedRange')
         .textContent =
-          'Through ' +
-          new Date(
+          t( 'through', { date: new Date(
             (
               windowEnd -
               1440
@@ -5656,7 +6645,7 @@
             60000
           )
             .toLocaleDateString(
-              undefined,
+              I18N.locale(),
               {
                 timeZone:
                   'UTC',
@@ -5670,7 +6659,7 @@
                 day:
                   'numeric'
               }
-            );
+            ) } );
 
 
       const data =
@@ -5685,7 +6674,7 @@
       ) {
 
         throw new Error(
-          'Admin access is no longer active. Please log in again.'
+          t( 'admin_expired' )
         );
 
       }
@@ -5832,7 +6821,7 @@
 
 
       empty.textContent =
-        'No blocked sessions';
+        t( 'no_blocked' );
 
 
       container.appendChild(
@@ -5900,7 +6889,7 @@
 
       title.textContent =
         event.title ||
-        'Blocked Session';
+        labelFor( 'BLOCKED' );
 
 
       const time =
@@ -5941,7 +6930,7 @@
 
 
         currentBadge.textContent =
-          'Happening now';
+          t( 'happening_now' );
 
 
         meta.appendChild(
@@ -5966,7 +6955,7 @@
 
 
         recurringBadge.textContent =
-          '↻ Recurring';
+          t( 'recurring' );
 
 
         meta.appendChild(
@@ -6332,7 +7321,7 @@
           range.start,
           d
         ).toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             weekday: 'short'
           }
@@ -6425,12 +7414,7 @@
               ' ' +
               (
                 event.title ||
-                (
-                  event.type ===
-                  'BLOCKED'
-                    ? 'Blocked'
-                    : 'Available'
-                )
+                labelFor( event.type )
               );
 
             chip.title =
@@ -6760,7 +7744,7 @@
       ctx.font = font( 12, '700' );
       ctx.fillText(
         date.toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             weekday: 'short',
             month: 'numeric',
@@ -6812,17 +7796,12 @@
           const blocked =
             event.type ===
             'BLOCKED';
-
-
+          const shades =
+            exportShades( event );
           ctx.fillStyle =
-            blocked
-              ? '#fee4e2'
-              : '#e7f5ec';
-
+            shades.tint;
           ctx.strokeStyle =
-            blocked
-              ? '#f5aaa3'
-              : '#b9dfc6';
+            shades.border;
 
           roundRectPath(
             ctx,
@@ -6837,40 +7816,64 @@
           ctx.stroke();
 
 
-          ctx.fillStyle =
-            blocked
-              ? '#b42318'
-              : '#2f7d4a';
-
-          ctx.font = font( 11, '700' );
-          ctx.fillText(
-            clipCanvasText(
-              ctx,
-              event.title ||
-              ( blocked
-                ? 'Blocked Session'
-                : 'Available' ),
-              COL_W - 16
-            ),
-            x + 9,
-            top + 14
+          /*
+            Text stays inside the card, as on the page: two lines when
+            there is room, otherwise one line with the title cut to
+            leave the time whole - "Tutorin… 7:45 – 8 PM".
+          */
+          ctx.save();
+          roundRectPath(
+            ctx,
+            x + 3,
+            top + 1,
+            COL_W - 6,
+            cardH - 2,
+            5
           );
-
-
+          ctx.clip();
+          ctx.fillStyle =
+            shades.ink;
+          const title =
+            event.title ||
+            labelFor( blocked ? 'BLOCKED' : 'AVAILABLE' );
+          const range =
+            formatMinuteRange( from, to );
           if ( cardH >= 28 ) {
-
+            ctx.font = font( 11, '700' );
+            ctx.fillText(
+              clipCanvasText( ctx, title, COL_W - 16 ),
+              x + 9,
+              top + 14
+            );
             ctx.font = font( 10 );
             ctx.fillText(
-              clipCanvasText(
-                ctx,
-                formatMinuteRange( from, to ),
-                COL_W - 16
-              ),
+              clipCanvasText( ctx, range, COL_W - 16 ),
               x + 9,
               top + 27
             );
-
+          } else {
+            const size =
+              cardH >= 18 ? 10 : 9;
+            const baseline =
+              top + cardH / 2 + size * 0.36;
+            ctx.font = font( size );
+            const rangeWidth =
+              ctx.measureText( range ).width;
+            ctx.font = font( size, '700' );
+            const gap = 8;
+            const titleText =
+              clipCanvasText( ctx, title, Math.max( 0, COL_W - 16 - rangeWidth - gap ) );
+            ctx.fillText( titleText, x + 9, baseline );
+            const titleWidth =
+              ctx.measureText( titleText ).width;
+            ctx.font = font( size );
+            ctx.fillText(
+              range,
+              x + 9 + titleWidth + ( titleText ? gap : 0 ),
+              baseline
+            );
           }
+          ctx.restore();
 
         }
       );
@@ -6931,7 +7934,7 @@
         if ( !blob ) {
 
           setStatus(
-            'Could not build the schedule image.'
+            t( 'image_failed' )
           );
 
           return;
@@ -6948,10 +7951,8 @@
         link.href =
           url;
 
-        link.download =
-          'schedule' +
-          VIEW_WORD[ state.view ] +
-          formatDate( visibleRange().start ).replace( /-/g, '' ) +
+                link.download =
+          downloadName() +
           '.png';
 
         document.body.appendChild( link );
@@ -6969,9 +7970,7 @@
 
 
         setStatus(
-          'The ' +
-          VIEW_WORD[ state.view ] +
-          ' schedule image is saved to your downloads.'
+          t( 'image_saved', { view: t( 'view_' + VIEW_WORD[ state.view ] ) } )
         );
 
       },
@@ -7086,7 +8085,7 @@
       ctx.font = font( 10, '700' );
       ctx.fillText(
         addDays( range.start, d )
-          .toLocaleDateString( undefined, { weekday: 'short' } )
+          .toLocaleDateString( I18N.locale(), { weekday: 'short' } )
           .toUpperCase(),
         left + d * COL_W + 8,
         top + 17
@@ -7192,11 +8191,10 @@
               26 +
               index * 19;
 
+            const shades =
+              exportShades( event );
             ctx.fillStyle =
-              blocked
-                ? '#fee4e2'
-                : '#e7f5ec';
-
+              shades.tint;
             roundRectPath(
               ctx,
               x + 4,
@@ -7209,10 +8207,7 @@
             ctx.fill();
 
             ctx.fillStyle =
-              blocked
-                ? '#b42318'
-                : '#2f7d4a';
-
+              shades.ink;
             ctx.font = font( 9.5, '600' );
             ctx.fillText(
               clipCanvasText(
@@ -7221,9 +8216,7 @@
                 ' ' +
                 (
                   event.title ||
-                  ( blocked
-                    ? 'Blocked'
-                    : 'Available' )
+                  labelFor( blocked ? 'BLOCKED' : 'AVAILABLE' )
                 ),
                 COL_W - 16
               ),
@@ -7398,6 +8391,10 @@
 
       notes:
         storedEvent.notes,
+      googleTitle:
+        storedEvent.googleTitle,
+      category:
+        storedEvent.category,
 
       start:
         newStart,
@@ -7414,7 +8411,7 @@
     try {
 
       setStatus(
-        'Saving moved event…'
+        t( 'saving_move' )
       );
 
 
@@ -7463,7 +8460,7 @@
 
 
         setStatus(
-          'Move not saved yet because of a schedule conflict.'
+          t( 'move_conflict' )
         );
 
 
@@ -7626,7 +8623,7 @@
     const items = [
       {
         label:
-          'New session here',
+          t( 'new_session_here' ),
         run:
           () => {
 
@@ -7641,9 +8638,7 @@
 
       items.push({
         label:
-          'Paste "' +
-          clipboardLabel() +
-          '" here',
+          t( 'paste_named', { name: clipboardLabel() } ),
         run:
           () => {
 
@@ -7684,7 +8679,7 @@
     const items = [
       {
         label:
-          'Edit',
+          t( 'edit' ),
         run:
           () => {
             openEventModal(
@@ -7696,7 +8691,7 @@
       },
       {
         label:
-          'Customize',
+          t( 'customize' ),
         run:
           () => {
             openColorDialog(
@@ -7708,7 +8703,7 @@
       },
       {
         label:
-          'Duplicate',
+          t( 'duplicate' ),
         run:
           () => {
             copyEvent( occurrence || original );
@@ -7724,14 +8719,14 @@
       },
       {
         label:
-          'Copy',
+          t( 'copy' ),
         run:
           () => {
             copyEvent( occurrence || original );
 
 
             setStatus(
-              'Copied. Right-click a slot or an availability block to paste it.'
+              t( 'copied_paste_hint' )
             );
 
           }
@@ -7752,8 +8747,8 @@
       {
         label:
           original.recurrence
-            ? 'Delete…'
-            : 'Delete',
+            ? t( 'delete_more' )
+            : t( 'delete' ),
         danger:
           true,
         run:
@@ -7829,7 +8824,7 @@
     const items = [
       {
         label:
-          'New session here',
+          t( 'new_session_here' ),
         run:
           () => {
             openEventModal( slot );
@@ -7842,9 +8837,7 @@
 
       items.push({
         label:
-          'Paste "' +
-          clipboardLabel() +
-          '" here',
+          t( 'paste_named', { name: clipboardLabel() } ),
         run:
           () => {
             pasteClipboardInto( slot );
@@ -7912,9 +8905,7 @@
     const name =
       copied.title ||
       copied.studentName ||
-      ( copied.type === 'AVAILABLE'
-        ? 'Available'
-        : 'Blocked' );
+      labelFor( copied.type );
 
 
     return name.length > 24
@@ -7967,6 +8958,10 @@
         copied.type,
       notes:
         copied.notes,
+      googleTitle:
+        copied.googleTitle,
+      category:
+        copied.category,
       color:
         copied.color
     });
@@ -8178,7 +9173,7 @@
 
       cancel.textContent =
         cancelLabel ||
-        'Cancel';
+        t( 'cancel' );
 
       cancel.addEventListener( 'click', () => {
 
@@ -8210,7 +9205,7 @@
 
         ok.textContent =
           okLabel ||
-          'OK';
+          t( 'ok' );
 
         ok.addEventListener( 'click', () => {
 
@@ -8295,7 +9290,7 @@
           {
             label:
               verb ||
-              'Delete',
+              t( 'delete' ),
             value:
               'yes',
             danger:
@@ -8321,7 +9316,7 @@
 
 
     return date.toLocaleDateString(
-      undefined,
+      I18N.locale(),
       {
         weekday: 'short',
         month: 'short',
@@ -8382,10 +9377,10 @@
     const choice =
       await siteDialog({
         title:
-          'Delete recurring event',
+          t( 'delete_recurring' ),
         message:
-          'This session is part of a repeating series.\n' +
-          ( original.title || 'This event' ) +
+          t( 'part_of_series' ) + '\n' +
+          ( original.title || t( 'this_event' ) ) +
           ' — ' +
           occurrenceLabel( clicked ),
         mode:
@@ -8401,10 +9396,10 @@
             original,
             clicked,
             {
-              one: 'This event only',
-              following: 'This and following events',
-              weekday: 'All %ss',
-              all: 'All events, past and future'
+              one: t( 'this_event_only' ),
+              following: t( 'this_and_following' ),
+              weekday: t( 'all_weekday' ).replace( '{weekday}', '%s' ),
+              all: t( 'all_events' )
             }
           )
       });
@@ -8485,8 +9480,7 @@
 
 
       setStatus(
-        occurrenceLabel( occurrence ) +
-        ' removed. Every other week keeps this session.'
+        t( 'removed_one', { date: occurrenceLabel( occurrence ) } )
       );
 
     } catch (error) {
@@ -8612,6 +9606,10 @@
 
               notes:
                 original.notes,
+              googleTitle:
+                original.googleTitle,
+              category:
+                original.category,
 
               start:
                 masterStart,
@@ -8630,9 +9628,7 @@
 
 
       setStatus(
-        'Removed ' +
-        occurrenceLabel( occurrence ) +
-        ' and every week after it. Earlier weeks are untouched.'
+        t( 'removed_following', { date: occurrenceLabel( occurrence ) } )
       );
 
     } catch (error) {
@@ -8672,7 +9668,7 @@
 
 
       setStatus(
-        'The whole series is deleted.'
+        t( 'series_deleted' )
       );
 
     } catch (error) {
@@ -8813,7 +9809,8 @@
 
 
   async function saveSeriesEditWithScope(
-    formEvent
+    formEvent,
+    chosenScope
   ) {
 
     const series =
@@ -8836,7 +9833,7 @@
       const reach =
         await siteDialog({
           title:
-            'Customize recurring event',
+            t( 'customize_recurring' ),
           mode:
             'radio',
           defaultValue:
@@ -8846,10 +9843,10 @@
               original,
               occurrence,
               {
-                one: 'This event only',
-                following: 'This and following events',
-                weekday: 'All %ss',
-                all: 'All events in the series'
+                one: t( 'this_event_only' ),
+                following: t( 'this_and_following' ),
+                weekday: t( 'all_weekday' ).replace( '{weekday}', '%s' ),
+                all: t( 'all_in_series' )
               }
             )
         });
@@ -8868,14 +9865,15 @@
         $('eventError')
           .textContent =
             error.message ||
-            'The change failed.';
+            t( 'change_failed' );
         return false;
       }
     }
     const scope =
+      chosenScope ||
       await siteDialog({
         title:
-          'Edit recurring event',
+          t( 'edit_recurring' ),
         mode:
           'radio',
         defaultValue:
@@ -8883,19 +9881,19 @@
         choices: [
           {
             label:
-              'This event only',
+              t( 'this_event_only' ),
             value:
               'one'
           },
           {
             label:
-              'This and following events',
+              t( 'this_and_following' ),
             value:
               'following'
           },
           {
             label:
-              'All events, past and future',
+              t( 'all_events' ),
             value:
               'all'
           }
@@ -8942,15 +9940,35 @@
 
     } catch (error) {
 
+      /*
+        An overlap is the admin's call, as it is for a one-off: the
+        form shows which sessions clash and offers Save anyway, which
+        re-runs this same scope with the check waived.
+      */
+      if (
+        error?.data?.code ===
+        'BLOCKED_CONFLICT'
+      ) {
+
+        showConflictWarning(
+          error.data,
+          {
+            ...formEvent,
+            seriesScope:
+              scope
+          }
+        );
+
+
+        return false;
+
+      }
+
+
       $('eventError')
         .textContent =
-          error?.data?.code ===
-          'BLOCKED_CONFLICT'
-            ? 'Not saved: it would overlap another blocked session.'
-            : (
-                error.message ||
-                'The change failed.'
-              );
+          error.message ||
+          t( 'change_failed' );
 
 
       return false;
@@ -9006,12 +10024,18 @@
             'POST',
           body:
             JSON.stringify({
+              forceConflict:
+                formEvent.forceConflict === true,
               type:
                 formEvent.type,
               title:
                 formEvent.title,
               notes:
                 formEvent.notes,
+              googleTitle:
+                formEvent.googleTitle,
+              category:
+                formEvent.category,
               start:
                 formEvent.start,
               end:
@@ -9038,8 +10062,7 @@
     }
 
 
-    return occurrenceLabel( occurrence ) +
-      ' changed on its own. Every other week is untouched.';
+    return t( 'changed_one', { date: occurrenceLabel( occurrence ) } );
 
   }
 
@@ -9140,12 +10163,18 @@
             'POST',
           body:
             JSON.stringify({
+              forceConflict:
+                formEvent.forceConflict === true,
               type:
                 formEvent.type,
               title:
                 formEvent.title,
               notes:
                 formEvent.notes,
+              googleTitle:
+                formEvent.googleTitle,
+              category:
+                formEvent.category,
               start:
                 formEvent.start,
               end:
@@ -9172,9 +10201,7 @@
     }
 
 
-    return 'Changed from ' +
-      occurrenceLabel( occurrence ) +
-      ' onward. Earlier weeks are untouched.';
+    return t( 'changed_following', { date: occurrenceLabel( occurrence ) } );
 
   }
 
@@ -9267,6 +10294,8 @@
           'POST',
         body:
           JSON.stringify({
+            forceConflict:
+              formEvent.forceConflict === true,
             id:
               original.masterId ||
               original.id,
@@ -9276,6 +10305,10 @@
               formEvent.title,
             notes:
               formEvent.notes,
+            googleTitle:
+              formEvent.googleTitle,
+            category:
+              formEvent.category,
             start:
               newStart,
             end:
@@ -9291,7 +10324,7 @@
     );
 
 
-    return 'The whole series changed, past weeks included.';
+    return t( 'changed_all' );
 
   }
 
@@ -9337,6 +10370,10 @@
 
       notes:
         original.notes,
+      googleTitle:
+        original.googleTitle,
+      category:
+        original.category,
 
       start:
         original.seriesStart ||
@@ -9484,10 +10521,10 @@
 
     return error?.data?.code ===
       'BLOCKED_CONFLICT'
-      ? 'Move not saved: it would overlap another blocked session.'
+      ? t( 'move_not_saved_overlap' )
       : (
           error.message ||
-          'The move failed.'
+          t( 'move_failed' )
         );
 
   }
@@ -9500,11 +10537,12 @@
     return new Date(
       localDateTime
     ).toLocaleString(
-      undefined,
+      I18N.locale(),
       {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
+        hour12: !is24h(),
         hour: 'numeric',
         minute: '2-digit'
       }
@@ -9592,9 +10630,9 @@
     const choice =
       await siteDialog({
         title:
-          'Edit recurring event',
+          t( 'edit_recurring' ),
         message:
-          ( original.title || 'This event' ) +
+          ( original.title || t( 'this_event' ) ) +
           ' would land on ' +
           moveTargetLabel( newStart ) +
           '.',
@@ -9605,19 +10643,19 @@
         choices: [
           {
             label:
-              'This event only',
+              t( 'this_event_only' ),
             value:
               'one'
           },
           {
             label:
-              'This and following events',
+              t( 'this_and_following' ),
             value:
               'following'
           },
           {
             label:
-              'All events, past and future',
+              t( 'all_events' ),
             value:
               'all'
           }
@@ -9695,7 +10733,7 @@
     try {
 
       setStatus(
-        'Moving this block…'
+        t( 'moving_one' )
       );
 
 
@@ -9730,6 +10768,10 @@
 
                 notes:
                   original.notes,
+                googleTitle:
+                  original.googleTitle,
+                category:
+                  original.category,
 
                 color:
                   normalizeHex( occurrence.color ) || null,
@@ -9763,9 +10805,7 @@
 
 
       setStatus(
-        'Moved just ' +
-        occurrenceLabel( occurrence ) +
-        '. Every other week keeps its time.'
+        t( 'moved_one', { date: occurrenceLabel( occurrence ) } )
       );
 
     } catch (error) {
@@ -9974,7 +11014,7 @@
     try {
 
       setStatus(
-        'Moving this and the weeks after…'
+        t( 'moving_following' )
       );
 
 
@@ -10012,6 +11052,10 @@
 
                 notes:
                   original.notes,
+                googleTitle:
+                  original.googleTitle,
+                category:
+                  original.category,
 
                 color:
                   normalizeHex( occurrence.color ) || null,
@@ -10045,9 +11089,7 @@
 
 
       setStatus(
-        'Moved ' +
-        occurrenceLabel( occurrence ) +
-        ' and every week after it. Earlier weeks keep their time.'
+        t( 'moved_following', { date: occurrenceLabel( occurrence ) } )
       );
 
     } catch (error) {
@@ -10195,7 +11237,7 @@
     try {
 
       setStatus(
-        'Moving the whole series…'
+        t( 'moving_all' )
       );
 
 
@@ -10219,6 +11261,10 @@
 
               notes:
                 original.notes,
+              googleTitle:
+                original.googleTitle,
+              category:
+                original.category,
 
               start:
                 minuteKeyToLocalDateTime(
@@ -10248,7 +11294,7 @@
 
 
       setStatus(
-        'Moved the whole series, past weeks included.'
+        t( 'moved_all' )
       );
 
     } catch (error) {
@@ -10287,8 +11333,8 @@
     const wanted =
       await siteConfirm(
         original.recurrence
-          ? 'Delete this entire recurring series?'
-          : 'Delete this event?',
+          ? t( 'delete_series_q' )
+          : t( 'delete_event_q' ),
         original.title ||
         ''
       );
@@ -10752,6 +11798,29 @@
         .toUpperCase();
 
 
+        if ( is24h() ) {
+      if (
+        !parts.hour.value ||
+        !parts.minute.value ||
+        !Number.isFinite( hour ) ||
+        !Number.isFinite( minute ) ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59
+      ) {
+        return '';
+      }
+      return (
+        String( hour )
+          .padStart( 2, '0' ) +
+        ':' +
+        String( minute )
+          .padStart( 2, '0' )
+      );
+    }
+
+
     if (
       !parts.hour.value ||
       !parts.minute.value ||
@@ -10774,6 +11843,7 @@
       meridiem === 'AM'
         ? hour % 12
         : ( hour % 12 ) + 12;
+
 
 
     return (
@@ -10827,12 +11897,15 @@
       Number( match[2] );
 
 
-    parts.hour.value =
-      String(
-        hour24 % 12 === 0
-          ? 12
-          : hour24 % 12
-      );
+        parts.hour.value =
+      is24h()
+        ? String( hour24 ).padStart( 2, '0' )
+        : String(
+            hour24 % 12 === 0
+              ? 12
+              : hour24 % 12
+          );
+
 
 
     parts.minute.value =
@@ -10936,13 +12009,11 @@
           }
 
 
-          if (
+                    if (
             digits.length === 1 &&
-            Number( digits ) > 1
+            Number( digits ) > ( is24h() ? 2 : 1 )
           ) {
-
             focusNext( parts.minute );
-
           }
 
         }
@@ -10966,16 +12037,10 @@
               .slice( 0, 2 );
 
 
-          parts.minute.value = digits;
-
-
+                    parts.minute.value = digits;
           publish();
-
-
-          if ( digits.length === 2 ) {
-
+          if ( digits.length === 2 && !is24h() ) {
             focusNext( parts.meridiem );
-
           }
 
         }
@@ -11090,7 +12155,19 @@
                   Number( field.value );
 
 
-                if ( field === parts.hour ) {
+                if ( field === parts.hour && is24h() ) {
+
+                  if ( numeric > 23 ) {
+
+                    numeric = 23;
+
+                  }
+
+
+                  field.value =
+                    String( numeric ).padStart( 2, '0' );
+
+                } else if ( field === parts.hour ) {
 
                   if ( numeric === 0 ) {
 
@@ -11425,15 +12502,41 @@
   }
 
 
-  function formatClockLabel(
+    function formatClockLabel(
     hour24,
     minute
   ) {
+
+    if ( is24h() ) {
+
+      return (
+        String( hour24 ).padStart( 2, '0' ) +
+        ':' +
+        String( minute ).padStart( 2, '0' )
+      );
+
+    }
+
+
+    if ( localizedClock() ) {
+
+      const text =
+        intlTime( hour24 * 60 + minute, true );
+
+      if ( text ) {
+
+        return text;
+
+      }
+
+    }
+
 
     const hour =
       hour24 % 12 === 0
         ? 12
         : hour24 % 12;
+
 
 
     return (
@@ -11723,19 +12826,17 @@
     ) {
 
       showRequestWarning(
-        'Schedule conflict',
+        t( 'schedule_conflict' ),
 
         overlapping.length ===
         1
-          ? 'That time overlaps a session the tutor has already blocked out.'
-          : 'That time overlaps ' +
-            overlapping.length +
-            ' sessions the tutor has already blocked out.',
+          ? t( 'overlaps_one_owner', { owner: ownerName() } )
+          : t( 'overlaps_many_owner', { n: overlapping.length, owner: ownerName() } ),
 
         overlapping.map(
           (event) => ({
             title:
-              'Blocked Session',
+              labelFor( 'BLOCKED' ),
 
             start:
               event.start,
@@ -11780,16 +12881,16 @@
     ) {
 
       showRequestWarning(
-        'Outside available hours',
+        t( 'outside_hours' ),
 
         windows.length
-          ? 'The tutor has not marked that whole time as available.'
-          : 'The tutor has no availability listed on that day.',
+          ? ownerName() + ' has not marked that whole time as available.'
+          : ownerName() + ' has no availability listed on that day.',
 
         windows.map(
           (event) => ({
             title:
-              'Available',
+              labelFor( 'AVAILABLE' ),
 
             start:
               event.start,
@@ -11943,7 +13044,7 @@
 
       $('requestError')
         .textContent =
-          'Please enter your name.';
+          t( 'need_name' );
 
 
       $('requestName')
@@ -11955,27 +13056,42 @@
     }
 
 
+    const email =
+      $('requestEmail')
+        .value
+        .trim();
+    if (
+      !email ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( email )
+    ) {
+      $('requestError')
+        .textContent =
+          t( 'need_email', { owner: ownerName() } );
+      $('requestEmail')
+        .focus();
+      return;
+    }
+    const phone =
+      $('requestPhone')
+        .value
+        .trim();
+    const guardian =
+      $('requestGuardian')
+        .value
+        .trim();
     const subject =
       $('requestSubject')
         .value
         .trim();
-
-
     if (
       !subject
     ) {
-
       $('requestError')
         .textContent =
-          'Please enter the subject.';
-
-
+          t( 'need_subject' );
       $('requestSubject')
         .focus();
-
-
       return;
-
     }
 
 
@@ -11990,7 +13106,7 @@
 
       $('requestError')
         .textContent =
-          'Please choose online or in person.';
+          t( 'need_format' );
 
 
       $('requestFormat')
@@ -12033,7 +13149,7 @@
 
       $('requestError')
         .textContent =
-          'Please choose a start and end time.';
+          t( 'need_times' );
 
 
       return;
@@ -12048,7 +13164,7 @@
 
       $('requestError')
         .textContent =
-          'The end time must be after the start time.';
+          t( 'end_after_start' );
 
 
       return;
@@ -12128,15 +13244,13 @@
           body:
             JSON.stringify({
               name,
-
+              email,
+              phone,
+              guardian,
               subject,
-
               format,
-
               recurrence,
-
               start,
-
               end
             })
         }
@@ -12149,7 +13263,7 @@
 
 
       setStatus(
-        'Request sent. The tutor will confirm it before it appears on the calendar.'
+        t( 'request_sent', { owner: ownerName() } )
       );
 
     } catch (error) {
@@ -12297,7 +13411,7 @@
 
     $('requestListStatus')
       .textContent =
-        'Loading requests…';
+        t( 'loading_requests' );
 
 
     $('requestList')
@@ -12354,7 +13468,7 @@
     $('requestListStatus')
       .textContent =
         requests.length
-          ? 'Accepting opens the editor with the details filled in. Nothing is saved until you save it.'
+          ? t( 'requests_hint' )
           : '';
 
 
@@ -12381,7 +13495,7 @@
 
 
       empty.textContent =
-        'No pending requests.';
+        t( 'no_pending_requests' );
 
 
       list.appendChild(
@@ -12453,6 +13567,10 @@
         describeRequest(
           request
         );
+      const contact =
+        renderRequestContact(
+          request
+        );
 
 
       const actions =
@@ -12476,7 +13594,7 @@
 
 
       accept.textContent =
-        'Accept';
+        t( 'accept' );
 
 
       accept.addEventListener(
@@ -12499,7 +13617,7 @@
 
 
       dismiss.textContent =
-        'Dismiss';
+        t( 'dismiss' );
 
 
       dismiss.addEventListener(
@@ -12521,10 +13639,9 @@
         title,
         time,
         meta,
+        contact,
         actions
       );
-
-
       list.appendChild(
         item
       );
@@ -12561,14 +13678,9 @@
 
     return [
       request.name,
-
-      formatLabel(
-        request
-      ),
-
-      'Tutoring'
+      '(' + formatLabel( request ) + ')'
     ]
-      .join(' ');
+      .join( ' ' );
 
   }
 
@@ -12640,7 +13752,7 @@
       !recurrence
     ) {
 
-      return 'One time';
+      return t( 'one_time' );
 
     }
 
@@ -12648,8 +13760,8 @@
     const every =
       recurrence.interval >
       1
-        ? `Every ${recurrence.interval} weeks`
-        : 'Weekly';
+        ? t( 'every_n_weeks', { n: recurrence.interval } )
+                : t( 'weekly' );
 
 
     if (
@@ -12677,6 +13789,50 @@
   }
 
 
+
+  /*
+    How to reach the requester: email and phone as links that open
+    the mail app or dialler, the guardian's name beside them. Seen
+    only in the admin's list.
+  */
+  function renderRequestContact(
+    request
+  ) {
+    const line =
+      document.createElement( 'div' );
+    line.className =
+      'request-contact';
+    if ( request.guardian ) {
+      const who =
+        document.createElement( 'span' );
+      who.textContent =
+        t( 'guardian_label' ) + request.guardian;
+      line.appendChild( who );
+    }
+    if ( request.email ) {
+      const mail =
+        document.createElement( 'a' );
+      mail.href =
+        'mailto:' + request.email;
+      mail.textContent =
+        request.email;
+      line.appendChild( mail );
+    }
+    if ( request.phone ) {
+      const tel =
+        document.createElement( 'a' );
+      tel.href =
+        'tel:' + request.phone.replace( /[^0-9+]/g, '' );
+      tel.textContent =
+        request.phone;
+      line.appendChild( tel );
+    }
+    if ( !line.childNodes.length ) {
+      line.textContent =
+        t( 'no_contact' );
+    }
+    return line;
+  }
 
   function describeRequest(
     request
@@ -12715,17 +13871,23 @@
 
 
     openEventModal({
-
       type:
         'BLOCKED',
-
       title:
         buildSessionTitle(
           request
         ),
-
       notes:
-        request.subject,
+        [
+          request.subject,
+          request.guardian
+            ? t( 'guardian_label' ) + request.guardian
+            : '',
+          request.email || '',
+          request.phone || ''
+        ]
+          .filter( Boolean )
+          .join( '\n' ),
 
       start:
         request.start,
@@ -12790,6 +13952,25 @@
     $('adminPasswordInput')
       .value =
         '';
+    $('loginEmailInput')
+      .value =
+        '';
+    $('loginPasswordInput')
+      .value =
+        '';
+
+
+    /*
+      An account signs in with its email. The first calendar, until
+      an account claims it, still opens with the site's admin
+      password, so the dialog offers that way too.
+    */
+    const legacyPossible =
+      Boolean( state.calendar && !state.calendar.claimed );
+    $('legacyLoginLink')
+      .classList
+      .toggle( 'hidden', !legacyPossible );
+    setLoginMode( legacyPossible ? 'legacy' : 'account' );
 
 
     openModal(
@@ -12800,7 +13981,7 @@
     setTimeout(
       () => {
 
-        $('adminPasswordInput')
+        $( legacyPossible ? 'adminPasswordInput' : 'loginEmailInput' )
           .focus();
 
       },
@@ -12810,8 +13991,43 @@
   }
 
 
+  function setLoginMode(
+    mode
+  ) {
+    state.loginMode =
+      mode;
+    const legacy =
+      mode === 'legacy';
+    $('accountLoginFields')
+      .classList
+      .toggle( 'hidden', legacy );
+    $('legacyLoginFields')
+      .classList
+      .toggle( 'hidden', !legacy );
+    $('loginTitle')
+      .textContent =
+        legacy ? t( 'admin_access' ) : t( 'login_title' );
+    $('loginSubmitBtn')
+      .textContent =
+        legacy ? t( 'enter_admin' ) : t( 'login_btn' );
+    $('legacyLoginLink')
+      .textContent =
+        legacy ? t( 'login_with_account' ) : t( 'use_admin_password' );
+    $('loginError')
+      .textContent =
+        '';
+  }
+
+
 
   async function submitAdminLogin() {
+
+    if ( state.loginMode !== 'legacy' ) {
+
+      return submitAccountLogin();
+
+    }
+
 
     const password =
       $('adminPasswordInput')
@@ -12915,6 +14131,777 @@
 
 
   /*
+    Sign in with an account. The session comes back with the account,
+    including the address of its calendar: this one, or another.
+  */
+
+  async function submitAccountLogin() {
+
+    const email =
+      $('loginEmailInput').value.trim();
+    const password =
+      $('loginPasswordInput').value;
+    const remember =
+      $('rememberMeInput').checked;
+
+    $('loginError').textContent = '';
+    if ( !email || !password ) {
+      $('loginError').textContent =
+        t( 'login_blank' );
+      return;
+    }
+    $('loginSubmitBtn').disabled = true;
+
+    try {
+
+      const result =
+        await fetch(
+          '/api/login',
+          {
+            method:
+              'POST',
+            headers:
+              { 'Content-Type': 'application/json' },
+            body:
+              JSON.stringify({ email, password }),
+            cache:
+              'no-store'
+          }
+        );
+      const data =
+        await result.json().catch( () => ({}) );
+      if ( !result.ok ) {
+        throw new Error( data.error || `Request failed (${ result.status })` );
+      }
+
+      state.session =
+        { token: data.token, expiresAt: data.expiresAt, slug: data.account.slug };
+      state.account =
+        data.account;
+      window.CalendarSession.save( state.session, remember );
+      forgetDevice();
+
+      closeModal( 'loginModal' );
+
+      /*
+        The account's own calendar opens in admin mode; any other
+        stays as it was, with the chip now offering the way home.
+      */
+      const here =
+        state.calendar ? state.calendar.slug : null;
+      state.isAdmin =
+        here === data.account.slug;
+      await loadWeek();
+
+    } catch (error) {
+
+      $('loginError').textContent =
+        error.message;
+
+    } finally {
+
+      $('loginSubmitBtn').disabled = false;
+
+    }
+
+  }
+
+
+  /*
+    CHANGE PASSWORD
+
+    The account's own password: the current one proves it is the
+    owner asking, and the change signs every other device out - the
+    server hands this one a fresh session.
+  */
+  function openChangePassword() {
+    [ 'currentPasswordInput', 'newPasswordInput', 'newPasswordAgainInput' ]
+      .forEach( (id) => { $(id).value = ''; } );
+    $('passwordError').textContent = '';
+    openModal( 'passwordModal' );
+    setTimeout( () => { $('currentPasswordInput').focus(); }, 50 );
+  }
+
+
+  async function savePassword() {
+    const current =
+      $('currentPasswordInput').value;
+    const next =
+      $('newPasswordInput').value;
+    const again =
+      $('newPasswordAgainInput').value;
+    $('passwordError').textContent = '';
+    if ( next.length < 8 ) {
+      $('passwordError').textContent =
+        t( 'auth_need_pw' );
+      return;
+    }
+    if ( next !== again ) {
+      $('passwordError').textContent =
+        t( 'cp_mismatch' );
+      return;
+    }
+    $('savePasswordBtn').disabled = true;
+    try {
+      const data =
+        await api(
+          '/account/password',
+          {
+            method:
+              'POST',
+            body:
+              JSON.stringify({ current, password: next })
+          }
+        );
+      let remembered =
+        true;
+      try {
+        remembered =
+          Boolean( localStorage.getItem( 'calendarSession' ) );
+      } catch {
+        remembered =
+          true;
+      }
+      state.session =
+        { token: data.token, expiresAt: data.expiresAt, slug: data.account.slug };
+      window.CalendarSession.save( state.session, remembered );
+      closeModal( 'passwordModal' );
+      setStatus( t( 'cp_done' ) );
+    } catch (error) {
+      $('passwordError').textContent =
+        error.message;
+    } finally {
+      $('savePasswordBtn').disabled = false;
+    }
+  }
+
+
+  /*
+    The name a booked session gets on the owner's Google calendar is
+    asked for only where it applies: a booked session, on a calendar
+    that mirrors to Google. Blank means the mirror's plain "Blocked".
+  */
+  function syncGoogleTitleField() {
+    $('googleTitleField')
+      .classList
+      .toggle(
+        'hidden',
+        !(
+          state.config.googleSync &&
+          $('eventType').value === 'BLOCKED'
+        )
+      );
+  }
+
+
+  /*
+    The category is offered only for a booked session, and only once
+    the owner has named some in Settings - or when the session is
+    already omitted, so it can be counted again.
+  */
+  function syncCategoryField() {
+    $('categoryField')
+      .classList
+      .toggle(
+        'hidden',
+        !(
+          (
+            state.categories.length ||
+            $('eventCategory').value === OMITTED
+          ) &&
+          $('eventType').value === 'BLOCKED'
+        )
+      );
+  }
+
+
+  function fillCategorySelect(
+    chosen
+  ) {
+    const select =
+      $('eventCategory');
+    select.innerHTML = '';
+    const none =
+      document.createElement( 'option' );
+    none.value = '';
+    none.textContent =
+      t( 'e_category_none' );
+    select.appendChild( none );
+    state.categories.forEach(
+      (category) => {
+        const option =
+          document.createElement( 'option' );
+        option.value =
+          category.id;
+        option.textContent =
+          category.name;
+        select.appendChild( option );
+      }
+    );
+    const omitted =
+      document.createElement( 'option' );
+    omitted.value =
+      OMITTED;
+    omitted.textContent =
+      t( 'e_category_omitted' );
+    select.appendChild( omitted );
+    select.value =
+      chosen === OMITTED ||
+      state.categories.some( (category) => category.id === chosen )
+        ? chosen
+        : '';
+  }
+
+
+  function categoryName(
+    id
+  ) {
+    const found =
+      state.categories.find(
+        (category) =>
+          category.id === id
+      );
+    return found
+      ? found.name
+      : '';
+  }
+
+
+  /*
+    The list of categories being edited in Settings: a name box and
+    a Remove for each, and a way to add one. Ids stay with their
+    rows, so renaming keeps the sessions filed under them.
+  */
+  function renderCategoryList() {
+    const list =
+      $('categoryList');
+    list.innerHTML = '';
+    ( state.settingsCategories || [] ).forEach(
+      (category, index) => {
+        const row =
+          document.createElement( 'div' );
+        row.className =
+          'category-row';
+        const input =
+          document.createElement( 'input' );
+        input.type = 'text';
+        input.maxLength = 30;
+        input.value =
+          category.name;
+        input.placeholder =
+          t( 's_category_name' );
+        input.setAttribute( 'aria-label', t( 's_category_name' ) );
+        input.addEventListener(
+          'input',
+          () => {
+            category.name =
+              input.value;
+          }
+        );
+        const remove =
+          document.createElement( 'button' );
+        remove.type = 'button';
+        remove.className =
+          'text-btn';
+        remove.textContent =
+          t( 's_category_remove' );
+        remove.addEventListener(
+          'click',
+          () => {
+            state.settingsCategories.splice( index, 1 );
+            renderCategoryList();
+          }
+        );
+        row.append( input, remove );
+        list.appendChild( row );
+      }
+    );
+  }
+
+
+  function addCategoryRow() {
+    state.settingsCategories =
+      state.settingsCategories || [];
+    if ( state.settingsCategories.length >= 12 ) {
+      return;
+    }
+    state.settingsCategories.push({
+      id: '',
+      name: ''
+    });
+    renderCategoryList();
+    const inputs =
+      $('categoryList').querySelectorAll( 'input' );
+    if ( inputs.length ) {
+      inputs[ inputs.length - 1 ].focus();
+    }
+  }
+
+
+  /*
+    What the account is: the site's owner is the Admin, any other
+    account the Owner of its calendars, and the site's admin password
+    (before an account claimed the first calendar) counts as Admin.
+  */
+  function roleName() {
+    if ( state.account ) {
+      return t( state.account.master ? 'role_admin' : 'role_owner' );
+    }
+    return t( 'role_admin' );
+  }
+
+
+  function ownsThisCalendar() {
+    if ( !state.session || !state.account || !state.calendar ) {
+      return false;
+    }
+    if ( typeof state.calendar.owned === 'boolean' ) {
+      return state.calendar.owned;
+    }
+    return state.account.slug === state.calendar.slug;
+  }
+
+
+  /* =========================================================
+     SEVERAL CALENDARS IN ONE VIEW
+  ========================================================= */
+
+  /*
+    An account may own more than one calendar. On any of them, the
+    owner can draw the others over it: their blocks appear in their
+    own colors with the calendar's name on them, and can be edited in
+    place - the page remembers which calendar each borrowed block
+    belongs to and sends the write there. The choice of which to show
+    is kept on the device, per calendar.
+  */
+
+  function overlaysKey() {
+    return 'overlays:' + ( state.calendarSlug || 'main' );
+  }
+
+
+  function shownOverlays() {
+    try {
+      const saved =
+        JSON.parse( localStorage.getItem( overlaysKey() ) || '[]' );
+      return Array.isArray( saved ) ? saved.filter( (slug) => typeof slug === 'string' ) : [];
+    } catch {
+      return [];
+    }
+  }
+
+
+  function saveShownOverlays(
+    slugs
+  ) {
+    try {
+      localStorage.setItem( overlaysKey(), JSON.stringify( slugs ) );
+    } catch {
+      /* storage off: the choice lasts for this page only */
+    }
+  }
+
+
+  /*
+    Borrowed events join the week's list with their calendar's colors
+    already applied and a note of where they came from.
+  */
+  function mergeOverlays(
+    overlays
+  ) {
+    state.overlays =
+      overlays;
+    state.overlayOwner =
+      {};
+    Object.entries( overlays ).forEach(
+      ([ slug, calendar ]) => {
+        ( calendar.events || [] ).forEach(
+          (event) => {
+            const type =
+              event.type === 'AVAILABLE' ? 'available' : 'blocked';
+            state.events.push({
+              ...event,
+              color:
+                normalizeHex( event.color ) || normalizeHex( calendar.colors && calendar.colors[ type ] ) || null,
+              overlay:
+                slug,
+              overlayTitle:
+                calendar.title
+            });
+            state.overlayOwner[ event.id ] =
+              slug;
+            if ( event.masterId ) {
+              state.overlayOwner[ event.masterId ] =
+                slug;
+            }
+          }
+        );
+      }
+    );
+  }
+
+
+  /*
+    Which calendar a request is really about: the one that owns the
+    event in its path or body, if that event was borrowed.
+  */
+  function overlayCalendarFor(
+    path,
+    method,
+    body
+  ) {
+    const inPath =
+      /^\/events\/([^/?]+)/.exec( path );
+    let id =
+      inPath ? decodeURIComponent( inPath[ 1 ] ) : null;
+    if ( !id && path.split( '?' )[ 0 ] === '/events' && method === 'POST' && body ) {
+      try {
+        id =
+          JSON.parse( body ).id || null;
+      } catch {
+        id =
+          null;
+      }
+    }
+    return id ? state.overlayOwner[ id ] || null : null;
+  }
+
+
+  /*
+    The account's calendars, fetched once per sign-in for the menu.
+  */
+  async function loadMyCalendars() {
+    if ( !state.session || state.myCalendars.length ) {
+      return;
+    }
+    try {
+      const data =
+        await api( '/me' );
+      state.myCalendars =
+        data.calendars || [];
+      state.account =
+        data.account || state.account;
+    } catch {
+      state.myCalendars =
+        [];
+    }
+    renderCalendarsMenu();
+  }
+
+
+  function renderCalendarsMenu() {
+    const others =
+      state.myCalendars.filter(
+        (calendar) => state.calendar && calendar.slug !== state.calendar.slug
+      );
+    const here =
+      state.myCalendars.find(
+        (calendar) => state.calendar && calendar.slug === state.calendar.slug
+      );
+    /*
+      The switch is worth showing once there is more than one calendar
+      to choose from - or always to the master, who may borrow any.
+    */
+    const show =
+      state.isAdmin &&
+      state.session &&
+      ( others.length > 0 || ( state.account && state.account.master ) );
+    $('calendarsPanel')
+      .classList
+      .toggle( 'hidden', !show );
+    $('calendarsBtn')
+      .classList
+      .toggle( 'hidden', !show );
+    document.querySelector( '.calendar-body' )
+      .classList
+      .toggle( 'with-panel', show );
+    if ( !show ) {
+      return;
+    }
+    const list =
+      $('calendarsList');
+    list.innerHTML =
+      '';
+    const shown =
+      shownOverlays();
+    const rows =
+      [ ...( here ? [ here ] : [] ), ...others ];
+    rows.forEach(
+      (calendar) => {
+        const row =
+          document.createElement( 'label' );
+        row.className =
+          'calendar-row';
+        const box =
+          document.createElement( 'input' );
+        box.type =
+          'checkbox';
+        box.setAttribute( 'role', 'switch' );
+        const isHere =
+          here && calendar.slug === here.slug;
+        box.checked =
+          isHere || shown.includes( calendar.slug );
+        box.disabled =
+          Boolean( isHere );
+        box.setAttribute( 'aria-checked', box.checked ? 'true' : 'false' );
+        box.addEventListener(
+          'change',
+          () => {
+            const next =
+              shownOverlays().filter( (slug) => slug !== calendar.slug );
+            if ( box.checked ) {
+              next.push( calendar.slug );
+            }
+            saveShownOverlays( next );
+            loadWeek( true );
+          }
+        );
+        const dot =
+          document.createElement( 'span' );
+        dot.className =
+          'calendar-dot';
+        dot.style.background =
+          ( calendar.colors && calendar.colors.blocked ) || '#b42318';
+        const name =
+          document.createElement( 'span' );
+        name.className =
+          'calendar-name';
+        name.textContent =
+          calendar.title;
+        row.append( box, dot, name );
+        if ( !isHere ) {
+          const open =
+            document.createElement( 'a' );
+          open.href =
+            '/' + calendar.slug;
+          open.textContent =
+            t( 'open' );
+          row.appendChild( open );
+        }
+        list.appendChild( row );
+      }
+    );
+  }
+
+
+  function toggleToolsMenu() {
+    const open =
+      $('toolsMenu').classList.contains( 'hidden' );
+    $('toolsMenu').classList.toggle( 'hidden', !open );
+    $('gearBtn').setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+  }
+
+
+  function closeToolsMenu() {
+    $('toolsMenu').classList.add( 'hidden' );
+    $('gearBtn').setAttribute( 'aria-expanded', 'false' );
+  }
+
+
+  function forgetSession() {
+    state.session =
+      null;
+    state.account =
+      null;
+    state.myCalendars =
+      [];
+    state.preview =
+      false;
+    window.CalendarSession.clear();
+  }
+
+
+  /*
+    Added to a home screen, the app should open on this calendar, not
+    the home page: the manifest is written for the address in hand.
+  */
+  function installManifest() {
+    if ( !state.calendarSlug ) {
+      return;
+    }
+    const link =
+      document.querySelector( 'link[rel="manifest"]' );
+    if ( !link ) {
+      return;
+    }
+    const manifest = {
+      name:
+        'MyOpenings',
+      short_name:
+        'MyOpenings',
+      start_url:
+        '/' + state.calendarSlug,
+      scope:
+        '/',
+      display:
+        'standalone',
+      background_color:
+        '#f6f7fb',
+      theme_color:
+        '#ffffff',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    };
+    link.href =
+      'data:application/manifest+json,' +
+      encodeURIComponent( JSON.stringify( manifest ) );
+  }
+
+
+  /*
+    LANGUAGE
+
+    The device's choice, else the browser's language, else the
+    calendar's default once the settings arrive. Changing it redraws
+    everything a visitor reads without a reload.
+  */
+  function initLanguage() {
+    const select =
+      $('langSelect');
+    Object.entries( window.I18N.LANGUAGES ).forEach(
+      ([ code, name ]) => {
+        const option =
+          document.createElement( 'option' );
+        option.value =
+          code;
+        option.textContent =
+          name;
+        select.appendChild( option );
+      }
+    );
+    select.addEventListener(
+      'change',
+      () => {
+        window.I18N.set( select.value );
+        applyLanguage();
+        renderAll();
+        loadWeek( true );
+      }
+    );
+    window.I18N.set( window.I18N.detect( 'en' ), false );
+    applyLanguage();
+  }
+
+
+  /*
+    The calendar's own default applies when this device never chose
+    and the browser's language is not one we have.
+  */
+  function syncLanguage() {
+    const wanted =
+      window.I18N.detect( state.config.language || 'en' );
+    if ( wanted !== window.I18N.get() ) {
+      window.I18N.set( wanted, false );
+      applyLanguage();
+    }
+  }
+
+
+  function applyLanguage() {
+    window.I18N.apply();
+    $('langSelect').value =
+      window.I18N.get();
+    $('langSelect').title =
+      t( 'language' );
+    if ( state.loginMode ) {
+      setLoginMode( state.loginMode );
+    }
+    if ( state.view && $('saveWeekBtn') ) {
+      applyView();
+    }
+  }
+
+
+  /*
+    The address in the page's own URL: /ethan names the calendar
+    "ethan"; the page itself, or no path, means the first calendar.
+  */
+  function slugFromLocation() {
+    const path =
+      window.location.pathname
+        .replace( /^\/+|\/+$/g, '' )
+        .toLowerCase();
+    if (
+      !path ||
+      path === 'index.html' ||
+      path === 'calendar.html'
+    ) {
+      return '';
+    }
+    return path;
+  }
+
+
+  /*
+    No calendar at this address, or one that is not published yet:
+    the page says so in place of the grid.
+  */
+  function showMissingCalendar(
+    reason
+  ) {
+    document.body.classList.add( 'calendar-missing' );
+    $('missingTitle').textContent =
+      t( reason.unpublished ? 'unpublished_title' : 'missing_title' );
+    $('missingText').textContent =
+      t( reason.unpublished ? 'unpublished_text' : 'missing_text' );
+    $('portalTitle').textContent =
+      'MyOpenings';
+    document.title =
+      'MyOpenings';
+    $('updatedLabel').textContent =
+      '';
+    setStatus( '' );
+  }
+
+
+  /*
+    The owner has not confirmed their email yet: the calendar is not
+    public until they do, and the banner says so.
+  */
+  function renderVerifyNotice() {
+    const show =
+      state.isAdmin &&
+      state.account &&
+      !state.account.verified &&
+      ownsThisCalendar() &&
+      state.calendar &&
+      state.calendar.claimed;
+    $('verifyNotice')
+      .classList
+      .toggle( 'hidden', !show );
+    if ( show ) {
+      $('verifyNoticeText').textContent =
+        state.calendar.live
+          ? `Confirm your email (${ state.account.email }) so you can reset your password if you ever forget it.`
+          : `Confirm your email (${ state.account.email }) to publish this calendar. Until then only you can see it.`;
+    }
+  }
+
+
+  async function resendVerification() {
+    $('resendVerifyBtn').disabled = true;
+    try {
+      const data =
+        await api( '/resend', { method: 'POST' } );
+      setStatus(
+        data.verification === 'sent'
+          ? t( 'confirm_sent' )
+          : data.verification === 'done'
+            ? t( 'already_confirmed' )
+            : t( 'email_not_sent' )
+      );
+    } catch (error) {
+      setStatus( error.message );
+    } finally {
+      $('resendVerifyBtn').disabled = false;
+    }
+  }
+
+
+  /*
     Public view steps out of admin mode for this page but keeps the
     device signed in, so Admin comes straight back without asking.
     Sign out forgets the device.
@@ -12933,6 +14920,14 @@
       '';
 
 
+    /*
+      Signed in with an account, the page keeps its session and asks
+      the server for what a visitor would get instead.
+    */
+    state.preview =
+      Boolean( state.session );
+
+
     return loadWeek();
 
   }
@@ -12941,20 +14936,665 @@
   async function signOut() {
 
     forgetDevice();
+    forgetSession();
 
 
     await exitAdmin();
 
 
     setStatus(
-      'Signed out on this device.'
+      t( 'signed_out' )
     );
 
   }
 
 
   /* =========================================================
-     BLOCK COLOURS (ADMIN)
+     SETTINGS (ADMIN)
+  ========================================================= */
+
+  /*
+    The calendar's own settings - title, name, time zone, hours, the
+    two default colours and the words for open and booked time - come
+    with every load as state.config and are applied here: the colours
+    become the page's variables, the words replace the built-in ones.
+  */
+
+  const BUILT_IN_COLORS = {
+    AVAILABLE:
+      '#2f7d4a',
+    BLOCKED:
+      '#b42318'
+  };
+
+  /*
+    The words for open and booked time and for whoever books it are
+    the owner's, typed in Settings. Left at the built-in defaults,
+    they read in the visitor's language; changed, they read as typed.
+  */
+  const DEFAULT_LABELS = {
+    available: 'Available',
+    blocked: 'Blocked Session',
+    person: 'student',
+    people: 'students'
+  };
+
+  function ownerWord(
+    key
+  ) {
+    const labels =
+      state.config.labels || {};
+    const word =
+      labels[ key ] || DEFAULT_LABELS[ key ];
+    return word === DEFAULT_LABELS[ key ]
+      ? t( 'label_' + key )
+      : word;
+  }
+
+  function labelFor(
+    type
+  ) {
+    return ownerWord( type === 'AVAILABLE' ? 'available' : 'blocked' );
+  }
+
+  /*
+    Whoever owns this calendar, by the display name in the settings:
+    the requester is told "Maya will confirm it", not "the tutor".
+  */
+  function ownerName() {
+    return ( state.config.tutorName || '' ).trim() || t( 'the_owner' );
+  }
+
+  function peopleWord(
+    count
+  ) {
+    return ownerWord( count === 1 ? 'person' : 'people' );
+  }
+
+  function applyConfigStyling() {
+    const colors =
+      state.config.colors || {};
+    const root =
+      document.documentElement.style;
+    const paint =
+      (prefix, hex) => {
+        const shades =
+          cardShades(
+            normalizeHex( hex ) ||
+            BUILT_IN_COLORS[ prefix === 'available' ? 'AVAILABLE' : 'BLOCKED' ]
+          );
+        root.setProperty( '--' + prefix, shades.ink );
+        root.setProperty( '--' + prefix + '-bg', shades.tint );
+        root.setProperty( '--' + prefix + '-border', shades.border );
+      };
+        paint( 'available', colors.available );
+    paint( 'blocked', colors.blocked );
+    const html =
+      document.documentElement;
+    if ( state.config.font && state.config.font !== 'system' ) {
+      html.setAttribute( 'data-font', state.config.font );
+    } else {
+      html.removeAttribute( 'data-font' );
+    }
+    html.setAttribute( 'data-clock', is24h() ? '24' : '12' );
+    /*
+      A new first day of the week moves the week on screen to the one
+      that contains the same days.
+    */
+    if ( state.view === 'week' ) {
+      state.weekStart =
+        startOfWeek( addDays( state.weekStart, 3 ) );
+    }
+    const setText =
+      (id, text) => {
+        const element =
+          $(id);
+        if ( element ) {
+          element.textContent =
+            text;
+        }
+      };
+    setText( 'legendAvailable', labelFor( 'AVAILABLE' ) );
+    setText( 'legendBlocked', labelFor( 'BLOCKED' ) );
+    setText( 'eventTypeAvailableOption', labelFor( 'AVAILABLE' ) );
+    setText( 'summaryPeopleLabel', peopleWord( 2 ) );
+    setText( 'summaryToggleLabel',
+      t( $('summaryList') && !$('summaryList').classList.contains( 'hidden' ) ? 'hide_all' : 'show_all', { noun: peopleWord( 2 ) } ) );
+    setText( 'summaryHoursLabel', t( 'hours_blocked_week' ) );
+    const requestRules =
+      state.config.requests || {};
+    setText( 'requestIntro', requestRules.intro || t( 'request_intro', { owner: ownerName() } ) );
+    setText( 'requestRules', describeRequestRules( requestRules ) );
+    if ( $('requestRules') ) {
+      $('requestRules').classList.toggle( 'hidden', !describeRequestRules( requestRules ) );
+    }
+    setText( 'requestWarningFooter', t( 'warning_footer', { owner: ownerName() } ) );
+    setText( 'requestEmailHint', t( 'email_hint', { owner: ownerName() } ) );
+    const description =
+      document.querySelector( 'meta[name="description"]' );
+    if ( description ) {
+      description.setAttribute( 'content', state.config.portalTitle || '' );
+    }
+    setText( 'requestsSubtitle', t( 'submitted_by', { people: peopleWord( 2 ) } ) );
+  }
+
+  /*
+    The dialog. Hours are whole hours; the time zone list is the
+    browser's own where it has one, else a short list plus whatever
+    the calendar is set to now.
+  */
+
+  const FALLBACK_TIMEZONES = [
+    'America/Los_Angeles', 'America/Denver', 'America/Chicago', 'America/New_York',
+    'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Vancouver',
+    'America/Mexico_City', 'America/Sao_Paulo', 'Europe/London', 'Europe/Paris',
+    'Europe/Berlin', 'Europe/Madrid', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore',
+    'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Sydney', 'Pacific/Auckland'
+  ];
+
+  function timezoneChoices() {
+    try {
+      const all =
+        Intl.supportedValuesOf( 'timeZone' );
+      if ( Array.isArray( all ) && all.length ) {
+        return all;
+      }
+    } catch {}
+    return FALLBACK_TIMEZONES;
+  }
+
+  function fillHourSelect(
+    select,
+    from,
+    to
+  ) {
+    select.innerHTML = '';
+    for ( let hour = from; hour <= to; hour++ ) {
+      const option =
+        document.createElement( 'option' );
+      option.value =
+        String( hour );
+      option.textContent =
+        hour === 24
+          ? ( is24h() ? '24:00 (midnight)' : '12 AM (midnight)' )
+          : formatMinutes( hour * 60 );
+      select.appendChild( option );
+    }
+  }
+
+  /*
+    Ready-made wording for the kinds of calendar people keep: what open
+    and booked time are called, and the word for whoever books it.
+  */
+  const WORDING_PRESETS = {
+    tutoring:     { available: 'Available',  blocked: 'Blocked Session', person: 'student',  people: 'students' },
+    lessons:      { available: 'Open',       blocked: 'Lesson',          person: 'pupil',    people: 'pupils' },
+    office:       { available: 'Open',       blocked: 'Meeting',         person: 'visitor',  people: 'visitors' },
+    coaching:     { available: 'Open',       blocked: 'Session',         person: 'client',   people: 'clients' },
+    classes:      { available: 'Open',       blocked: 'Class',           person: 'attendee', people: 'attendees' },
+    appointments: { available: 'Open',       blocked: 'Appointment',     person: 'client',   people: 'clients' }
+  };
+
+  /*
+    Session lengths from a quarter hour to eight hours, in the steps
+    people actually use.
+  */
+  function fillMinuteSelect(
+    select,
+    chosen
+  ) {
+    const steps =
+      [ 15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 420, 480 ];
+    if ( !steps.includes( chosen ) ) {
+      steps.push( chosen );
+      steps.sort( (a, b) => a - b );
+    }
+    select.innerHTML = '';
+    steps.forEach(
+      (minutes) => {
+        const option =
+          document.createElement( 'option' );
+        option.value =
+          String( minutes );
+        option.textContent =
+          minutes % 60 === 0
+            ? ( minutes / 60 ) + ( minutes === 60 ? ' hour' : ' hours' )
+            : minutes > 60
+              ? Math.floor( minutes / 60 ) + ' h ' + ( minutes % 60 ) + ' min'
+              : minutes + ' minutes';
+        select.appendChild( option );
+      }
+    );
+    select.value =
+      String( chosen );
+  }
+
+  function renderShareLink(
+    slug
+  ) {
+    $('shareLink').textContent =
+      window.location.origin + '/' + ( slug || '' );
+  }
+
+  async function openSettings() {
+    endAction();
+    $('settingsError').textContent = '';
+    let settings;
+    let mail;
+    let slug;
+    let google;
+    let feed;
+    try {
+      const data =
+        await api( '/settings' );
+      settings =
+        data.settings;
+      mail =
+        data.mail;
+      slug =
+        data.slug;
+      google =
+        data.google || {};
+      feed =
+        data.feed || {};
+    } catch (error) {
+      setStatus( error.message );
+      return;
+    }
+    renderMailStatus(
+      mail,
+      settings.notificationEmail
+    );
+    $('googleSetup')
+      .classList
+      .toggle( 'hidden', !google.available );
+    $('googleUnavailable')
+      .classList
+      .toggle( 'hidden', Boolean( google.available ) );
+    $('serviceAccountEmail').textContent =
+      google.serviceAccountEmail || '';
+    $('settingGoogleCalendarId').value =
+      google.calendarId || '';
+    $('googleFromSite')
+      .classList
+      .toggle( 'hidden', !google.fromSite );
+    $('feedLink').textContent =
+      feed.url || '';
+    const requests =
+      settings.requests || {};
+    $('settingRequestsEnabled').checked =
+      requests.enabled !== false;
+    $('settingRequestIntro').value =
+      requests.intro || '';
+    $('settingMinNotice').value =
+      String( requests.minNoticeHours || 0 );
+    $('settingMaxWeeks').value =
+      String( requests.maxWeeksAhead || 12 );
+    fillMinuteSelect( $('settingMinMinutes'), requests.minMinutes || 15 );
+    fillMinuteSelect( $('settingMaxMinutes'), requests.maxMinutes || 480 );
+    $('settingShowBooked').checked =
+      !settings.privacy || settings.privacy.showBooked !== false;
+    state.settingsCategories =
+      ( settings.categories || [] ).map(
+        (category) => ({ ...category })
+      );
+    renderCategoryList();
+    $('settingWeekStart').value =
+      String( settings.weekStart === 1 ? 1 : 0 );
+    $('settingHourFormat').value =
+      settings.hourFormat === '24' ? '24' : '12';
+    $('settingFont').value =
+      settings.font || 'system';
+    $('settingLanguage').value =
+      settings.language || 'en';
+    $('settingPreset').value =
+      '';
+    $('settingSlug').value =
+      slug || '';
+    $('settingSlugPrefix').textContent =
+      window.location.host + '/';
+    renderShareLink( slug );
+    $('settingTitle').value =
+      settings.title || '';
+    $('settingDisplayName').value =
+      settings.displayName || '';
+    const zones =
+      timezoneChoices();
+    const zoneSelect =
+      $('settingTimezone');
+    zoneSelect.innerHTML = '';
+    const list =
+      zones.includes( settings.timezoneId )
+        ? zones
+        : [ settings.timezoneId, ...zones ];
+    list.forEach(
+      (zone) => {
+        const option =
+          document.createElement( 'option' );
+        option.value = zone;
+        option.textContent =
+          zone.replace( /_/g, ' ' );
+        zoneSelect.appendChild( option );
+      }
+    );
+    zoneSelect.value =
+      settings.timezoneId;
+    fillHourSelect( $('settingDayStart'), 0, 23 );
+    fillHourSelect( $('settingDayEnd'), 1, 24 );
+    $('settingDayStart').value =
+      String( settings.dayStart );
+    $('settingDayEnd').value =
+      String( settings.dayEnd );
+    state.settingsColors = {
+      available:
+        normalizeHex( settings.colors && settings.colors.available ) || BUILT_IN_COLORS.AVAILABLE,
+      blocked:
+        normalizeHex( settings.colors && settings.colors.blocked ) || BUILT_IN_COLORS.BLOCKED
+    };
+    /*
+      The two default colours use the same swatch row as a block;
+      here "Default" means the built-in green or red.
+    */
+    renderColorSwatches(
+      $('settingAvailableColor'),
+      {
+        selected:
+          state.settingsColors.available === BUILT_IN_COLORS.AVAILABLE
+            ? null
+            : state.settingsColors.available,
+        defaultColor:
+          BUILT_IN_COLORS.AVAILABLE,
+        onPick:
+          (hex) => {
+            state.settingsColors.available =
+              hex || BUILT_IN_COLORS.AVAILABLE;
+          }
+      }
+    );
+    renderColorSwatches(
+      $('settingBlockedColor'),
+      {
+        selected:
+          state.settingsColors.blocked === BUILT_IN_COLORS.BLOCKED
+            ? null
+            : state.settingsColors.blocked,
+        defaultColor:
+          BUILT_IN_COLORS.BLOCKED,
+        onPick:
+          (hex) => {
+            state.settingsColors.blocked =
+              hex || BUILT_IN_COLORS.BLOCKED;
+          }
+      }
+    );
+    const labels =
+      settings.labels || {};
+    $('settingLabelAvailable').value =
+      labels.available || '';
+    $('settingLabelBlocked').value =
+      labels.blocked || '';
+    $('settingLabelPerson').value =
+      labels.person || '';
+    $('settingLabelPeople').value =
+      labels.people || '';
+    $('settingNotificationEmail').value =
+      settings.notificationEmail || '';
+    openModal( 'settingsModal' );
+    $('settingTitle').focus();
+  }
+
+  /*
+    Email: whether the site can send at all, and whether the last
+    notification went out. The dialog shows it; the banner shows a
+    failure until it is dismissed or the next send succeeds.
+  */
+  function renderMailStatus(
+    mail,
+    address
+  ) {
+    const line =
+      $('mailStatusText');
+    const button =
+      $('testMailBtn');
+    if ( !mail || !mail.configured ) {
+      line.textContent =
+        t( 'mail_not_set_up' );
+      line.className =
+        'mail-status';
+      button.disabled =
+        true;
+      return;
+    }
+    button.disabled =
+      false;
+    if ( mail.lastError ) {
+      line.textContent =
+        t( 'last_mail_failed', { error: mail.lastError.message } );
+      line.className =
+        'mail-status bad';
+    } else if ( address ) {
+      line.textContent =
+        t( 'mail_goes_to', { address } );
+      line.className =
+        'mail-status ok';
+    } else {
+      line.textContent =
+        t( 'mail_enter_address' );
+      line.className =
+        'mail-status';
+    }
+  }
+
+  function applyMailStatus(
+    mail
+  ) {
+    if ( !state.isAdmin || !mail || !mail.lastError ) {
+      return;
+    }
+    if ( state.dismissedMailError === mail.lastError.at ) {
+      return;
+    }
+    $('mailNoticeText').textContent =
+      t( 'mail_failed_notice', { error: mail.lastError.message } );
+    $('mailNotice')
+      .classList
+      .remove( 'hidden' );
+    state.shownMailError =
+      mail.lastError.at;
+  }
+
+  function hideMailNotice() {
+    state.dismissedMailError =
+      state.shownMailError;
+    $('mailNotice')
+      .classList
+      .add( 'hidden' );
+  }
+
+  async function sendTestMail() {
+    const line =
+      $('mailStatusText');
+    const button =
+      $('testMailBtn');
+    const typed =
+      $('settingNotificationEmail').value.trim();
+    /*
+      The test goes to the SAVED address; an unsaved change is saved
+      first so the test means what the admin sees.
+    */
+    button.disabled =
+      true;
+    line.textContent =
+      'Sending…';
+    line.className =
+      'mail-status';
+    try {
+      if ( typed ) {
+        await api(
+          '/settings',
+          {
+            method:
+              'PUT',
+            body:
+              JSON.stringify({ notificationEmail: typed })
+          }
+        );
+      }
+      const data =
+        await api(
+          '/settings/testmail',
+          {
+            method:
+              'POST'
+          }
+        );
+      line.textContent =
+        t( 'test_sent', { address: data.to } );
+      line.className =
+        'mail-status ok';
+      hideMailNotice();
+    } catch (error) {
+      line.textContent =
+        t( 'test_failed', { error: error.message } );
+      line.className =
+        'mail-status bad';
+    } finally {
+      button.disabled =
+        false;
+    }
+  }
+
+  async function saveSettings() {
+    $('settingsError').textContent = '';
+    const body = {
+      title:
+        $('settingTitle').value,
+      displayName:
+        $('settingDisplayName').value,
+      timezoneId:
+        $('settingTimezone').value,
+      dayStart:
+        Number( $('settingDayStart').value ),
+      dayEnd:
+        Number( $('settingDayEnd').value ),
+      colors:
+        { ...state.settingsColors },
+      labels: {
+        available:
+          $('settingLabelAvailable').value,
+        blocked:
+          $('settingLabelBlocked').value,
+        person:
+          $('settingLabelPerson').value,
+        people:
+          $('settingLabelPeople').value
+      },
+      notificationEmail:
+        $('settingNotificationEmail').value,
+      slug:
+        $('settingSlug').value.trim().toLowerCase(),
+      googleCalendarId:
+        $('settingGoogleCalendarId').value.trim(),
+      weekStart:
+        Number( $('settingWeekStart').value ),
+      hourFormat:
+        $('settingHourFormat').value,
+      font:
+        $('settingFont').value,
+      language:
+        $('settingLanguage').value,
+      requests: {
+        enabled:
+          $('settingRequestsEnabled').checked,
+        intro:
+          $('settingRequestIntro').value,
+        minNoticeHours:
+          Number( $('settingMinNotice').value ),
+        maxWeeksAhead:
+          Number( $('settingMaxWeeks').value ),
+        minMinutes:
+          Number( $('settingMinMinutes').value ),
+        maxMinutes:
+          Number( $('settingMaxMinutes').value )
+      },
+      privacy: {
+        showBooked:
+          $('settingShowBooked').checked
+      },
+      categories:
+        ( state.settingsCategories || [] )
+          .map(
+            (category) => ({
+              id: category.id,
+              name: category.name.trim()
+            })
+          )
+          .filter(
+            (category) =>
+              category.name
+          )
+    };
+    if ( body.dayEnd <= body.dayStart ) {
+      $('settingsError').textContent =
+        t( 'day_end_after_start' );
+      return;
+    }
+    $('saveSettingsBtn').disabled = true;
+    try {
+      const data =
+        await api(
+          '/settings',
+          {
+            method:
+              'PUT',
+            body:
+              JSON.stringify( body )
+          }
+        );
+      state.config = {
+        ...state.config,
+        ...( data.config || {} )
+      };
+      applyConfigStyling();
+      closeModal( 'settingsModal' );
+      /*
+        A new address: the page moves there without reloading, and the
+        session remembers it.
+      */
+      if ( data.slug && data.slug !== state.calendarSlug ) {
+        state.calendarSlug =
+          data.slug;
+        if ( state.calendar ) {
+          state.calendar.slug =
+            data.slug;
+        }
+        if ( state.account ) {
+          state.account.slug =
+            data.slug;
+        }
+        if ( state.session ) {
+          state.session.slug =
+            data.slug;
+        }
+        window.history.replaceState( null, '', '/' + data.slug + window.location.search );
+      }
+      await loadWeek();
+      setStatus(
+        data.sync && data.sync.google === 'failed'
+          ? t( 'settings_saved_google_failed', { error: data.sync.error || 'unknown error' } )
+          : t( 'settings_saved' )
+      );
+    } catch (error) {
+      $('settingsError').textContent =
+        error.message ||
+        t( 'settings_not_saved' );
+    } finally {
+      $('saveSettingsBtn').disabled = false;
+    }
+  }
+
+  /* =========================================================
+     BLOCK COLORS (ADMIN)
   ========================================================= */
 
   /*
@@ -12988,9 +15628,13 @@
   function defaultColorFor(
     type
   ) {
-    return type === 'AVAILABLE'
-      ? '#2f7d4a'
-      : '#b42318';
+    const colors =
+      state.config.colors || {};
+    return normalizeHex(
+      type === 'AVAILABLE'
+        ? colors.available
+        : colors.blocked
+    ) || BUILT_IN_COLORS[ type === 'AVAILABLE' ? 'AVAILABLE' : 'BLOCKED' ];
   }
 
   function normalizeHex(
@@ -13069,6 +15713,25 @@
   ) {
     const rgb =
       hexToRgb( hex );
+    if ( isDarkTheme() ) {
+      /*
+        On a dark surface the roles flip: the text is a lightened
+        version of the colour, the tint a deep mix with the surface.
+      */
+      const surface =
+        hexToRgb( '#171d2b' );
+      const mix =
+        (from, to, amount) =>
+          from.map( (part, i) => part + ( to[ i ] - part ) * amount );
+      return {
+        ink:
+          rgbToHex( lightInk( rgb ) ),
+        tint:
+          rgbToHex( mix( rgb, surface, 0.72 ) ),
+        border:
+          rgbToHex( mix( rgb, surface, 0.45 ) )
+      };
+    }
     const ink =
       readableInk( rgb );
     return {
@@ -13079,6 +15742,88 @@
       border:
         rgbToHex( mixWithWhite( ink, 0.55 ) )
     };
+  }
+
+  /*
+    Text on a dark tint must be light: a colour is brightened until
+    its luminance is comfortably high, keeping its hue.
+  */
+  function lightInk(
+    rgb
+  ) {
+    const [ r, g, b ] = rgb;
+    const luminance =
+      ( 0.2126 * r + 0.7152 * g + 0.0722 * b ) / 255;
+    if ( luminance >= 0.62 ) {
+      return rgb;
+    }
+    const amount =
+      Math.min( 0.9, ( 0.62 - luminance ) / Math.max( 0.05, 1 - luminance ) );
+    return mixWithWhite( rgb, amount );
+  }
+
+  /* =========================================================
+     THEME (LIGHT / DARK)
+  ========================================================= */
+
+  /*
+    A per-device choice: light, dark, or nothing (the device's own
+    preference). Stored in the browser, applied to the root element;
+    everything that computes a colour in script is redrawn.
+  */
+  function isDarkTheme() {
+    const chosen =
+      document.documentElement.getAttribute( 'data-theme' );
+    if ( chosen === 'dark' ) return true;
+    if ( chosen === 'light' ) return false;
+    return Boolean(
+      window.matchMedia &&
+      window.matchMedia( '(prefers-color-scheme: dark)' ).matches
+    );
+  }
+
+  function applyTheme(
+    theme
+  ) {
+    if ( theme === 'dark' || theme === 'light' ) {
+      document.documentElement.setAttribute( 'data-theme', theme );
+      try {
+        localStorage.setItem( 'theme', theme );
+      } catch {}
+    } else {
+      document.documentElement.removeAttribute( 'data-theme' );
+      try {
+        localStorage.removeItem( 'theme' );
+      } catch {}
+    }
+    renderThemeButton();
+    applyConfigStyling();
+    renderAll();
+  }
+
+  function toggleTheme() {
+    applyTheme(
+      isDarkTheme()
+        ? 'light'
+        : 'dark'
+    );
+  }
+
+  function renderThemeButton() {
+    const dark =
+      isDarkTheme();
+    $('themeIcon').textContent =
+      dark
+        ? '☀'
+        : '☾';
+    $('themeBtn').title =
+      dark
+        ? t( 'switch_light' )
+        : t( 'switch_dark' );
+    $('themeBtn').setAttribute(
+      'aria-label',
+      $('themeBtn').title
+    );
   }
 
   /*
@@ -13135,6 +15880,19 @@
     );
   }
 
+  /*
+    The shades the screenshot export draws a block in: its own colour
+    in admin mode, else the type's default from the settings.
+  */
+  function exportShades(
+    event
+  ) {
+    return cardShades(
+      ( state.isAdmin && normalizeHex( event.color ) ) ||
+      defaultColorFor( event.type )
+    );
+  }
+
   function colorName(
     hex
   ) {
@@ -13144,7 +15902,7 @@
           entry.hex === hex
       );
     return match
-      ? match.name
+      ? t( 'color_' + match.name.toLowerCase() )
       : hex.toUpperCase();
   }
 
@@ -13213,7 +15971,7 @@
       selected = null;
     }
     const defaultLabel =
-      'Default (' + colorName( defaultColor ) + ')';
+      t( 'default_color', { name: colorName( defaultColor ) } );
     const defaultSwatch =
       makeSwatch(
         defaultColor,
@@ -13284,9 +16042,9 @@
           'color-preset-remove';
         remove.textContent = '×';
         remove.title =
-          'Remove this preset';
+          t( 'remove_preset' );
         remove.setAttribute( 'role', 'button' );
-        remove.setAttribute( 'aria-label', 'Remove preset ' + hex.toUpperCase() );
+        remove.setAttribute( 'aria-label', t( 'remove_preset_named', { name: hex.toUpperCase() } ) );
         remove.addEventListener( 'click', (clickEvent) => {
           clickEvent.stopPropagation();
           clickEvent.preventDefault();
@@ -13310,12 +16068,12 @@
     custom.className =
       'color-swatch color-custom';
     custom.title =
-      'Custom color…';
+      t( 'custom_color_more' );
     const input =
       document.createElement( 'input' );
     input.type = 'color';
     input.className = 'color-custom-input';
-    input.setAttribute( 'aria-label', 'Custom color' );
+    input.setAttribute( 'aria-label', t( 'custom_color' ) );
     input.value =
       selected || defaultColor;
     /*
@@ -13369,6 +16127,16 @@
     Mondays" is offered only when the series meets on more than one
     weekday - on a one-day series it is the whole series.
   */
+  /*
+    A weekday's name in the language on screen.
+  */
+  function weekdayName(
+    index
+  ) {
+    return t( 'weekday_names' )[ index ] || WEEKDAY_NAMES[ index ];
+  }
+
+
   function seriesScopeChoices(
     original,
     occurrence,
@@ -13388,11 +16156,11 @@
       ( original.recurrence && original.recurrence.weekdays ) || [];
     if ( weekdays.length > 1 && occurrence ) {
       const weekday =
-        WEEKDAY_NAMES[
+        weekdayName(
           new Date(
             occurrence.start.slice( 0, 10 ) + 'T12:00'
           ).getDay()
-        ];
+        );
       choices.push({
         label:
           verbs.weekday.replace( '%s', weekday ),
@@ -13440,9 +16208,9 @@
     const scope =
       await siteDialog({
         title:
-          'Customize',
+          t( 'customize' ),
         message:
-          ( original.title || 'This event' ) +
+          ( original.title || t( 'this_event' ) ) +
           ( recurring
             ? ' — ' + occurrenceLabel( clicked )
             : '' ),
@@ -13462,15 +16230,15 @@
                 original,
                 clicked,
                 {
-                  one: 'This event only',
-                  following: 'This and following events',
-                  weekday: 'All %ss',
-                  all: 'All events in the series'
+                  one: t( 'this_event_only' ),
+                  following: t( 'this_and_following' ),
+                  weekday: t( 'all_weekday' ).replace( '{weekday}', '%s' ),
+                  all: t( 'all_in_series' )
                 }
               )
             : [],
         okLabel:
-          'Apply'
+          t( 'apply' )
       });
     if ( !scope ) {
       return false;
@@ -13543,8 +16311,8 @@
       }
     );
     return color
-      ? 'Color set to ' + colorName( color ) + '.'
-      : 'Back to the default color.';
+      ? t( 'color_set_to', { name: colorName( color ) } )
+      : t( 'back_to_default_color' );
   }
 
   /*
@@ -13611,7 +16379,7 @@
       );
       await loadWeek();
       setStatus(
-        'Every ' + WEEKDAY_NAMES[ weekday ] + ' removed. The other days keep this session.'
+        t( 'removed_weekday', { weekday: weekdayName( weekday ) } )
       );
     } catch (error) {
       setStatus( error.message );
@@ -13786,6 +16554,27 @@
   */
 
   function resumeRememberedDevice() {
+
+    /*
+      An account session opens in admin mode; if this turns out to be
+      someone else's calendar the first load steps back to visitor.
+    */
+    const session =
+      window.CalendarSession.read();
+
+
+    if ( session ) {
+
+      state.session =
+        session;
+
+      state.isAdmin =
+        true;
+
+      return;
+
+    }
+
 
     const token =
       rememberedDeviceToken();
@@ -14261,7 +17050,7 @@
     ) {
 
       throw new Error(
-        'Select at least one day of the week.'
+        t( 'select_weekday' )
       );
 
     }
@@ -14287,7 +17076,7 @@
     ) {
 
       throw new Error(
-        'Repeat interval must be between 1 and 52 weeks.'
+        t( 'interval_range' )
       );
 
     }
@@ -14326,7 +17115,7 @@
       ) {
 
         throw new Error(
-          'Choose the date when the recurring event should end.'
+          t( 'choose_end_date' )
         );
 
       }
@@ -14366,7 +17155,7 @@
       ) {
 
         throw new Error(
-          'Occurrences must be between 1 and 999.'
+          t( 'occurrences_range' )
         );
 
       }
@@ -14504,10 +17293,10 @@
         isEdit
           ? (
               event.recurrence
-                ? 'Edit recurring event'
-                : 'Edit time'
+                ? t( 'edit_recurring' )
+                : t( 'edit_event' )
             )
-          : 'Add time';
+          : t( 'add_event' );
 
 
     $('eventId')
@@ -14571,6 +17360,20 @@
           event.notes
         ) ||
         '';
+
+
+    $('eventGoogleTitle')
+      .value =
+        (
+          event &&
+          event.googleTitle
+        ) ||
+        '';
+    syncGoogleTitleField();
+    fillCategorySelect(
+      ( event && event.category ) || ''
+    );
+    syncCategoryField();
 
 
     $('eventError')
@@ -14761,8 +17564,8 @@
       .textContent =
         total ===
         1
-          ? 'This event overlaps with an existing blocked session.'
-          : `This event overlaps with ${total} existing blocked sessions.`;
+          ? t( 'overlaps_one' )
+          : t( 'overlaps_many', { total } );
 
 
     const list =
@@ -14807,7 +17610,7 @@
 
       title.textContent =
         conflict.title ||
-        'Blocked Session';
+        labelFor( 'BLOCKED' );
 
 
       const time =
@@ -14861,12 +17664,7 @@
 
 
       more.textContent =
-        `And ${remaining} more conflict${
-          remaining ===
-          1
-            ? ''
-            : 's'
-        }.`;
+        t( 'more_conflicts', { n: remaining } );
 
 
       list.appendChild(
@@ -14941,6 +17739,39 @@
 
 
     try {
+
+      if ( event.seriesScope ) {
+
+        /*
+          A series edit that clashed: the same scope, this time with
+          the check waived.
+        */
+        const { seriesScope, ...formEvent } = event;
+        const outcome =
+          await saveSeriesEditWithScope(
+            {
+              ...formEvent,
+              forceConflict:
+                true
+            },
+            seriesScope
+          );
+        if ( !outcome ) {
+          return;
+        }
+        clearConflictWarning();
+        closeModal(
+          'eventModal'
+        );
+        await clearAcceptedRequest();
+        await loadWeek();
+        setStatus(
+          outcome
+        );
+        return;
+
+      }
+
 
       await api(
         '/events',
@@ -15031,7 +17862,7 @@
 
       $('eventError')
         .textContent =
-          'Please select a session type before saving.';
+          t( 'select_type' );
 
 
       $('eventType')
@@ -15053,7 +17884,7 @@
 
       $('eventError')
         .textContent =
-          'Please enter a title for this event before saving.';
+          t( 'enter_title' );
 
 
       $('eventTitle')
@@ -15100,7 +17931,7 @@
 
       $('eventError')
         .textContent =
-          'Please enter a valid start and end date/time.';
+          t( 'valid_datetime' );
 
 
       return;
@@ -15119,7 +17950,7 @@
 
       $('eventError')
         .textContent =
-          'The end date/time must be after the start date/time.';
+          t( 'end_after_start_dt' );
 
 
       return;
@@ -15159,6 +17990,12 @@
       title,
       notes:
         $('eventNotes')
+          .value,
+      googleTitle:
+        $('eventGoogleTitle')
+          .value,
+      category:
+        $('eventCategory')
           .value,
       recurrence
     };
@@ -15380,8 +18217,8 @@
     const wanted =
       await siteConfirm(
         recurring
-          ? 'Delete this entire recurring series?'
-          : 'Delete this event?',
+          ? t( 'delete_series_q' )
+          : t( 'delete_event_q' ),
         $('eventTitle')
           .value ||
         ''
@@ -15489,7 +18326,7 @@
     const dateText =
       startDate
         .toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             timeZone:
               'UTC',
@@ -15512,10 +18349,12 @@
     const startTime =
       startDate
         .toLocaleTimeString(
-          undefined,
+          I18N.locale(),
           {
             timeZone:
               'UTC',
+
+            hour12: !is24h(),
 
             hour:
               'numeric',
@@ -15529,10 +18368,12 @@
     const endTime =
       endDate
         .toLocaleTimeString(
-          undefined,
+          I18N.locale(),
           {
             timeZone:
               'UTC',
+
+            hour12: !is24h(),
 
             hour:
               'numeric',
@@ -15558,7 +18399,7 @@
     const endDateText =
       endDate
         .toLocaleDateString(
-          undefined,
+          I18N.locale(),
           {
             timeZone:
               'UTC',
@@ -15750,9 +18591,17 @@
       );
 
 
+        /*
+      The week starts on the day the settings say: Sunday unless the
+      calendar chose Monday.
+    */
+    const first =
+      state.config.weekStart === 1 ? 1 : 0;
+
+
     result.setDate(
       result.getDate() -
-      result.getDay()
+      ( ( result.getDay() - first + 7 ) % 7 )
     );
 
 
@@ -15812,6 +18661,93 @@
 
 
 
+    /*
+    "ethans_tutoring_availability 9.13-9.19": the title as a file
+    name, then the dates on screen.
+  */
+  function downloadName() {
+    const title =
+      ( state.config.portalTitle || 'calendar' )
+        .toLowerCase()
+        .replace( /['’]/g, '' )
+        .replace( /[^a-z0-9]+/g, '_' )
+        .replace( /^_+|_+$/g, '' ) || 'calendar';
+    const range =
+      visibleRange();
+    const md =
+      (date) => ( date.getMonth() + 1 ) + '.' + date.getDate();
+    const last =
+      addDays( range.start, range.days - 1 );
+    const when =
+      state.view === 'month'
+        ? ( range.start.getMonth() + 1 ) + '.' + range.start.getFullYear()
+        : range.days > 1
+          ? md( range.start ) + '-' + md( last )
+          : md( range.start );
+    return title + ' ' + when;
+  }
+
+
+  /*
+    The clock is a setting: "2:30 PM" or "14:30". Every label on the
+    page goes through the helpers below, so one flag changes them all.
+    In a language other than English the browser writes the 12-hour
+    form its own way - "8 a. m.", "上午8时" - so those come from Intl.
+  */
+  function is24h() {
+    return state.config.hourFormat === '24';
+  }
+
+
+  function localizedClock() {
+    return !is24h() && window.I18N.get() !== 'en';
+  }
+
+
+  function intlTime(
+    minutes,
+    withMinutes
+  ) {
+    const date =
+      new Date( 2026, 0, 1, Math.floor( minutes / 60 ), minutes % 60 );
+    try {
+      return new Intl.DateTimeFormat(
+        window.I18N.locale(),
+        {
+          hour: 'numeric',
+          ...( withMinutes ? { minute: '2-digit' } : {} ),
+          hour12: true
+        }
+      ).format( date );
+    } catch {
+      return null;
+    }
+  }
+
+
+  /*
+    The time zone's name as the visitor's language gives it, falling
+    back to the server's English label.
+  */
+  function localizedTimezoneLabel() {
+    if ( window.I18N.get() === 'en' || !state.config.timezoneId ) {
+      return state.config.timezoneLabel;
+    }
+    try {
+      const part =
+        new Intl.DateTimeFormat(
+          window.I18N.locale(),
+          { timeZone: state.config.timezoneId, timeZoneName: 'longGeneric' }
+        )
+          .formatToParts( new Date() )
+          .find( (item) => item.type === 'timeZoneName' );
+      return part && part.value ? part.value : state.config.timezoneLabel;
+    } catch {
+      return state.config.timezoneLabel;
+    }
+  }
+
+
   function formatMinutes(
     minutes
   ) {
@@ -15825,6 +18761,32 @@
         1440
       ) %
       1440;
+
+
+    if ( is24h() ) {
+
+      return (
+        String( Math.floor( normalized / 60 ) ).padStart( 2, '0' ) +
+        ':' +
+        String( normalized % 60 ).padStart( 2, '0' )
+      );
+
+    }
+
+
+    if ( localizedClock() ) {
+
+      const text =
+        intlTime( normalized, normalized % 60 !== 0 );
+
+      if ( text ) {
+
+        return text;
+
+      }
+
+    }
+
 
 
     const hour24 =
@@ -15900,7 +18862,9 @@
       );
 
 
-    const opening =
+        const opening =
+      !is24h() &&
+      !localizedClock() &&
       start.slice(
         -2
       ) ===
@@ -15912,6 +18876,7 @@
             -3
           )
         : start;
+
 
 
     return (
@@ -16148,7 +19113,7 @@
 
       $('checkedLabel')
         .textContent =
-          'Refreshed just now';
+          t( 'refreshed_now' );
 
 
       return;
@@ -16163,7 +19128,7 @@
 
       $('checkedLabel')
         .textContent =
-          `Refreshed ${minutes} min ago`;
+          t( 'refreshed_min_ago', { minutes } );
 
 
       return;
@@ -16171,22 +19136,24 @@
     }
 
 
-    $('checkedLabel')
+        $('checkedLabel')
       .textContent =
-        'Refreshed at ' +
-        new Date(
-          state.lastLoadedAt
-        )
-          .toLocaleTimeString(
-            undefined,
-            {
-              hour:
-                'numeric',
-
-              minute:
-                '2-digit'
-            }
-          );
+        t( 'refreshed_at', {
+          time:
+            new Date(
+              state.lastLoadedAt
+            )
+              .toLocaleTimeString(
+                I18N.locale(),
+                {
+                  hour12: !is24h(),
+                  hour:
+                    'numeric',
+                  minute:
+                    '2-digit'
+                }
+              )
+        } );
 
   }
 
@@ -16207,13 +19174,15 @@
     )
       ? iso
       : date.toLocaleString(
-          undefined,
+          I18N.locale(),
           {
             month:
               'short',
 
             day:
               'numeric',
+
+            hour12: !is24h(),
 
             hour:
               'numeric',

@@ -10,6 +10,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8971
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -57,7 +58,7 @@ async def main():
         errs = []
         page.on("pageerror", lambda e: errs.append(str(e)))
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
 
@@ -72,7 +73,7 @@ async def main():
         # from the third week; "this event only" on the first. One block left.
         await page.evaluate("""async (tue) => fetch('/api/events', { method: 'POST',
             headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
-            body: JSON.stringify({ id: 'maya', type: 'BLOCKED', title: 'Maya - Algebra II',
+            body: JSON.stringify({ type: 'BLOCKED', title: 'Maya - Algebra II',
                 start: tue + 'T16:00', end: tue + 'T17:00',
                 recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2], endType: 'NEVER' } }) })""", d["tue"])
         await page.click("#nextWeekBtn"); await page.click("#nextWeekBtn"); await page.wait_for_timeout(800)
@@ -101,10 +102,10 @@ async def main():
         await click_button(page, "Cancel")
         check("cancelled: still there", await cards_on(page, d["tue1"]) == 1)
 
-        # the editor agrees: it is "Edit time", and its Delete is the plain kind
+        # the editor agrees: it is "Edit event", and its Delete is the plain kind
         await page.locator(f'.day-column[data-date="{d["tue1"]}"] .event-card').click(); await page.wait_for_timeout(400)
         title = await page.text_content("#eventModalTitle")
-        check("the editor opens it as a one-time session", title.strip() == "Edit time", title)
+        check("the editor opens it as a one-time session", title.strip() == "Edit event", title)
         await page.click("#deleteEventBtn")
         dlg = await dialog(page)
         check("the editor's Delete is a plain confirmation too", dlg["radios"] == 0, str(dlg))

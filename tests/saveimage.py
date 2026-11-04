@@ -9,6 +9,7 @@ from playwright.async_api import async_playwright
 
 PORT = 8948
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -23,7 +24,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
         page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
         await page.evaluate("""async () => {
@@ -33,7 +34,7 @@ async def main():
                 headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
                 body: JSON.stringify(body) });
             await post({ type: 'AVAILABLE', title: 'Open', start: tue + 'T15:00', end: tue + 'T18:00' });
-            await post({ id: 'series-1', type: 'BLOCKED', title: 'Maya - Algebra II',
+            await post({ type: 'BLOCKED', title: 'Maya - Algebra II',
                 start: tue + 'T16:00', end: tue + 'T17:00',
                 recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4], endType: 'NEVER' } });
         }""")
@@ -47,8 +48,11 @@ async def main():
         name = dl.suggested_filename
         path = await dl.path()
         data = open(path, "rb").read()
-        check("the download is a png named for the weekly view",
-              name.startswith("scheduleweekly") and name.endswith(".png"), name)
+        expected = await page.evaluate("""(() => { const cols = [...document.querySelectorAll('.day-column')].map(c => c.dataset.date);
+            const md = (s) => { const d = new Date(s + 'T12:00'); return (d.getMonth() + 1) + '.' + d.getDate(); };
+            return 'ethans_tutoring_availability ' + md(cols[0]) + '-' + md(cols[cols.length - 1]) + '.png'; })()""")
+        check("the download is a png named calendar + week, e.g. ethans_tutoring_availability 9.13-9.19.png",
+              name == expected, f"{name} != {expected}")
         check("it really is a PNG", data[:8] == b"\x89PNG\r\n\x1a\n", str(data[:8]))
         check("it is a full-size image, not a thumbnail", len(data) > 20000, f"{len(data)} bytes")
         status = await page.text_content("#status")
@@ -58,7 +62,7 @@ async def main():
         pub = await (await b.new_context(viewport={"width": 390, "height": 844},
                                           accept_downloads=True)).new_page()
         pub.on("pageerror", lambda e: errs.append(str(e)))
-        await pub.goto(BASE, wait_until="networkidle")
+        await pub.goto(CAL, wait_until="networkidle")
         await pub.wait_for_timeout(700)
         async with pub.expect_download() as dl_info:
             await pub.click("#saveWeekBtn")

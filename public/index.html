@@ -3,2032 +3,2390 @@
 
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>MyOpenings</title>
+  <link rel="icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script>
+    /*
+      The theme chosen on this device, applied before the first paint
+      so the page never flashes the other one.
+    */
+    try {
+      var savedTheme = localStorage.getItem( 'theme' );
+      if ( savedTheme === 'dark' || savedTheme === 'light' ) {
+        document.documentElement.setAttribute( 'data-theme', savedTheme );
+      }
+    } catch ( e ) {}
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /*
+      THE HOME PAGE
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1"
-  >
+      What the site does, at length: a header that stays put, a hero,
+      how it works, everything included, what visitors see, who it is
+      for, questions, and the way in - a dialog for logging in and
+      signing up that the email links also open.
+    */
+    html {
+      scroll-behavior: smooth;
+    }
 
-  <meta
-    name="theme-color"
-    content="#ffffff"
-  >
+    .home-top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+    }
 
-  <title>Ethan's Tutoring Availability</title>
+    .home-top-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 12px 4vw;
+    }
 
-  <link
-    rel="manifest"
-    href="/manifest.webmanifest"
-  >
+    .home-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 750;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+      white-space: nowrap;
+    }
 
-  <link
-    rel="apple-touch-icon"
-    href="/apple-touch-icon.png"
-  >
+    .home-brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+    }
 
-  <link
-    rel="icon"
-    href="/icon-192.png"
-  >
+    .home-nav {
+      display: flex;
+      gap: 18px;
+      font-size: 14px;
+    }
 
-  <!--
-    Added to the home screen, iOS launches this
-    without browser chrome. There is no address
-    bar to reload from in that mode, which the
-    Refresh button already covers.
-  -->
+    .home-nav a {
+      color: var(--muted);
+      text-decoration: none;
+    }
 
-  <meta
-    name="mobile-web-app-capable"
-    content="yes"
-  >
+    .home-nav a:hover {
+      color: var(--text);
+    }
 
-  <meta
-    name="apple-mobile-web-app-capable"
-    content="yes"
-  >
+    .home-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
-  <meta
-    name="apple-mobile-web-app-status-bar-style"
-    content="default"
-  >
+    .home-top-actions .btn {
+      white-space: nowrap;
+    }
 
-  <meta
-    name="apple-mobile-web-app-title"
-    content="Tutoring"
-  >
+    .home {
+      padding: 0 0 40px;
+    }
 
-  <link
-    rel="stylesheet"
-    href="/styles.css"
-  >
+    /*
+      Each part of the page is a full-width band with its own tone,
+      its content held to a comfortable measure inside.
+    */
+    .band {
+      position: relative;
+      padding: 72px 4vw;
+    }
+
+    .band-alt {
+      background: var(--surface-2);
+    }
+
+    .band-tint {
+      background: var(--accent-tint);
+    }
+
+    /*
+      The bands run to the edges of whatever screen the page is on;
+      what sits in them is held to a readable measure and centered.
+      The calendar itself keeps the whole width - a week wants every
+      pixel - but a landing page's cards and questions do not.
+    */
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .home h2 {
+      position: relative;
+      display: inline-block;
+      margin: 0 0 20px;
+      font-size: clamp(24px, 3vw, 32px);
+      letter-spacing: -0.01em;
+    }
+
+    /* a gradient rule draws itself under each heading as it arrives */
+    .home h2::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -8px;
+      width: 48px;
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #315efb, #6d28d9, #be185d);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s;
+    }
+
+    .home h2.in::after,
+    .home h2:not(.reveal)::after {
+      transform: scaleX(1);
+    }
+
+    .band-stories h2::after,
+    .band-ready h2::after {
+      background: #fff;
+    }
+
+    /* how far down the page the reader is, as a line along the header */
+    .home-progress {
+      position: absolute;
+      left: 0;
+      bottom: -1px;
+      height: 3px;
+      width: 100%;
+      transform: scaleX(var(--read, 0));
+      transform-origin: left;
+      background: linear-gradient(90deg, #315efb, #6d28d9, #be185d, #f59e0b);
+      pointer-events: none;
+    }
+
+    .home-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 680px);
+      gap: 48px;
+      align-items: center;
+    }
+
+    .band-hero {
+      overflow: hidden;
+      background: var(--bg);
+      padding-top: 96px;
+      padding-bottom: 96px;
+    }
+
+    /*
+      MOTION
+
+      The page moves the way a product page does: soft color drifting
+      behind the hero, the hero rising into place, the sample calendar
+      playing a short loop (a slot opens, a visitor asks, the owner
+      accepts), each section revealing as it scrolls into view, the
+      "made for" row gliding, cards lifting under the pointer. All of
+      it is decoration: with "reduce motion" set on the device, the
+      page simply stands still and shows everything at once.
+    */
+    .blob {
+      position: absolute;
+      width: 46vw;
+      height: 46vw;
+      max-width: 720px;
+      max-height: 720px;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.55;
+      pointer-events: none;
+      animation: drift 22s ease-in-out infinite alternate;
+    }
+
+    .blob-a {
+      top: -18%;
+      right: -8%;
+      background: var(--accent-tint);
+    }
+
+    .blob-b {
+      bottom: -30%;
+      left: -10%;
+      background: rgba(47, 125, 74, 0.16);
+      animation-duration: 28s;
+      animation-delay: -9s;
+    }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to { transform: translate(6vw, 4vw) scale(1.12); }
+    }
+
+    .band-hero .wrap {
+      position: relative;
+    }
+
+    .hero-in {
+      animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+      animation-delay: var(--d, 0ms);
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(22px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .home-preview {
+      position: relative;
+      animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) 250ms both, bob 7s ease-in-out 1.2s infinite;
+    }
+
+    @keyframes bob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    /* the short loop the sample calendar plays */
+    .home-preview-block.ghost {
+      opacity: 0;
+      transform: scale(0.85);
+      transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    .home-preview[data-step="1"] .ghost-open,
+    .home-preview[data-step="2"] .ghost-open,
+    .home-preview[data-step="3"] .ghost-open,
+    .home-preview[data-step="4"] .ghost-open,
+    .home-preview[data-step="4"] .ghost-booked {
+      opacity: 1;
+      transform: none;
+    }
+
+    .home-preview-pill {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .home-preview[data-step="2"] .home-preview-pill {
+      transform: scale(1.08);
+      box-shadow: 0 0 0 6px var(--accent-tint);
+    }
+
+    .home-preview-cursor {
+      position: absolute;
+      top: 60%;
+      left: 40%;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text);
+      opacity: 0;
+      box-shadow: 0 0 0 3px var(--card);
+      transition: top 0.8s cubic-bezier(0.4, 0, 0.2, 1), left 0.8s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .home-preview[data-step="1"] .home-preview-cursor,
+    .home-preview[data-step="2"] .home-preview-cursor {
+      opacity: 0.85;
+    }
+
+    .home-preview[data-step="2"] .home-preview-cursor {
+      top: 16px;
+      left: calc(100% - 44px);
+    }
+
+    .home-preview-request,
+    .home-preview-toast {
+      position: absolute;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 24px);
+      opacity: 0;
+      transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+      pointer-events: none;
+    }
+
+    .home-preview-request {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2px 14px;
+      align-items: center;
+      min-width: 240px;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 14px 40px var(--shadow);
+      font-size: 12px;
+    }
+
+    .home-preview-request strong {
+      font-size: 13px;
+    }
+
+    .home-preview-request span {
+      color: var(--muted);
+    }
+
+    .home-preview-request em {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      padding: 6px 10px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 8px;
+      font-style: normal;
+      font-weight: 650;
+    }
+
+    .home-preview-toast {
+      padding: 8px 14px;
+      background: #2f7d4a;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .home-preview[data-step="3"] .home-preview-request,
+    .home-preview[data-step="4"] .home-preview-toast {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    /* sections reveal as they scroll into view */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+      transition-delay: var(--d, 0ms);
+    }
+
+    .reveal.in {
+      opacity: 1;
+      transform: none;
+    }
+
+    .home-step {
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, opacity 0.7s ease;
+    }
+
+    .home-step:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+      box-shadow: 0 14px 34px var(--shadow);
+    }
+
+    .home-step::before {
+      transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+    }
+
+    .home-step.reveal:not(.in)::before {
+      transform: scale(0.4);
+    }
+
+    .home-phone {
+      animation: bob 8s ease-in-out infinite;
+    }
+
+    .home-phone-btn {
+      position: relative;
+    }
+
+    .home-phone-btn::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 13px;
+      border: 2px solid var(--accent);
+      opacity: 0;
+      animation: ring 2.6s ease-out infinite;
+    }
+
+    @keyframes ring {
+      0% { opacity: 0.7; transform: scale(0.96); }
+      70%, 100% { opacity: 0; transform: scale(1.12); }
+    }
+
+    /* the "made for" row glides by */
+    .home-marquee {
+      overflow: hidden;
+      mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+    }
+
+    .home-chips-track {
+      display: flex;
+      gap: 10px;
+      width: max-content;
+      animation: glide 36s linear infinite;
+    }
+
+    .home-marquee:hover .home-chips-track {
+      animation-play-state: paused;
+    }
+
+    @keyframes glide {
+      to { transform: translateX(-50%); }
+    }
+
+    .home-faq details p {
+      animation: rise 0.35s ease both;
+    }
+
+    .home-top {
+      transition: box-shadow 0.25s ease, background 0.25s ease;
+    }
+
+    .home-top.scrolled {
+      box-shadow: 0 6px 24px var(--shadow);
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+
+    /*
+      COLOR AND THE TWO SHOWCASES
+
+      The page carries more than one hue: a third blob behind the hero,
+      a color per step, a gradient band for what visitors see, a
+      gradient "ready" band, and a stage for the features that changes
+      hue with each one. Cards and tiles on the gradients are white
+      with dark ink in both themes, the way a photo is the same in
+      both; the gradients themselves stay saturated in both.
+    */
+    .blob-c {
+      top: 30%;
+      left: 40%;
+      width: 30vw;
+      height: 30vw;
+      background: rgba(244, 114, 182, 0.18);
+      animation-duration: 26s;
+      animation-delay: -15s;
+    }
+
+    .home-step:nth-child(1)::before { background: #e8eeff; color: #315efb; }
+    .home-step:nth-child(2)::before { background: #e3f5ea; color: #2f7d4a; }
+    .home-step:nth-child(3)::before { background: #f1e8ff; color: #6d28d9; }
+
+    .home-step:nth-child(1):hover { border-color: #315efb; }
+    .home-step:nth-child(2):hover { border-color: #2f7d4a; }
+    .home-step:nth-child(3):hover { border-color: #6d28d9; }
+
+    /* ---- Everything included: a list on the left, a stage on the right */
+    .home-features-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      grid-template-areas:
+        "title stage"
+        "list stage";
+      gap: 0 56px;
+      align-items: start;
+    }
+
+    .features-title {
+      grid-area: title;
+    }
+
+    .feature-list {
+      grid-area: list;
+    }
+
+    .feature-stage {
+      grid-area: stage;
+    }
+
+    .feature-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .feature-item {
+      position: relative;
+      border-top: 1px solid var(--line);
+    }
+
+    .feature-item:last-child {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .feature-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 16px 4px;
+      background: none;
+      border: 0;
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      font-size: 17px;
+      text-align: left;
+      cursor: pointer;
+      opacity: 0.55;
+      transition: opacity 0.3s ease;
+    }
+
+    .feature-item.active .feature-head,
+    .feature-head:hover {
+      opacity: 1;
+    }
+
+    .feature-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--tone-soft, var(--accent-tint));
+      color: var(--tone, var(--accent));
+    }
+
+    .feature-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .feature-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    .feature-item.active .feature-body {
+      max-height: 160px;
+    }
+
+    .feature-body p {
+      margin: 0 0 16px 46px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .feature-progress {
+      position: absolute;
+      left: 0;
+      bottom: -1px;
+      height: 2px;
+      width: 0;
+      background: var(--tone, var(--accent));
+    }
+
+    .feature-item.active .feature-progress {
+      animation: fill var(--beat, 5s) linear forwards;
+    }
+
+    @keyframes fill {
+      to { width: 100%; }
+    }
+
+    .feature-item[data-scene="1"] { --tone: #315efb; --tone-soft: #e8eeff; }
+    .feature-item[data-scene="2"] { --tone: #0f766e; --tone-soft: #dcf5f0; }
+    .feature-item[data-scene="3"] { --tone: #c2410c; --tone-soft: #ffe8dc; }
+    .feature-item[data-scene="4"] { --tone: #1d4ed8; --tone-soft: #e2e9ff; }
+    .feature-item[data-scene="5"] { --tone: #be185d; --tone-soft: #fde4ef; }
+    .feature-item[data-scene="6"] { --tone: #6d28d9; --tone-soft: #efe6ff; }
+    .feature-item[data-scene="7"] { --tone: #334155; --tone-soft: #e6eaf0; }
+    .feature-item[data-scene="8"] { --tone: #a16207; --tone-soft: #fff1cc; }
+    .feature-item[data-scene="9"] { --tone: #2f7d4a; --tone-soft: #dff3e6; }
+
+    .feature-stage {
+      position: sticky;
+      top: 84px;
+      width: min(100%, 900px);
+      margin: 0 auto;
+      aspect-ratio: 1 / 0.86;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px var(--shadow);
+      background: #315efb;
+    }
+
+    .scene {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: scale(1.02);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+
+    .feature-stage[data-scene="1"] .s1,
+    .feature-stage[data-scene="2"] .s2,
+    .feature-stage[data-scene="3"] .s3,
+    .feature-stage[data-scene="4"] .s4,
+    .feature-stage[data-scene="5"] .s5,
+    .feature-stage[data-scene="6"] .s6,
+    .feature-stage[data-scene="7"] .s7,
+    .feature-stage[data-scene="8"] .s8,
+    .feature-stage[data-scene="9"] .s9 {
+      opacity: 1;
+      transform: none;
+    }
+
+    .s1 { background: linear-gradient(135deg, #7aa2ff 0%, #315efb 55%, #6d28d9 100%); }
+    .s2 { background: linear-gradient(135deg, #5eead4 0%, #0f766e 60%, #1d4ed8 100%); }
+    .s3 { background: linear-gradient(135deg, #fdba74 0%, #f97316 50%, #db2777 100%); }
+    .s4 { background: linear-gradient(135deg, #93c5fd 0%, #1d4ed8 60%, #0f766e 100%); }
+    .s5 { background: linear-gradient(135deg, #f9a8d4 0%, #be185d 50%, #6d28d9 100%); }
+    .s6 { background: linear-gradient(135deg, #c4b5fd 0%, #6d28d9 55%, #315efb 100%); }
+    .s7 { background: linear-gradient(135deg, #94a3b8 0%, #334155 60%, #1e293b 100%); }
+    .s8 { background: linear-gradient(135deg, #fde68a 0%, #d97706 55%, #db2777 100%); }
+    .s9 { background: linear-gradient(135deg, #86efac 0%, #2f7d4a 55%, #1d4ed8 100%); }
+
+    .tile {
+      position: absolute;
+      padding: 12px 14px;
+      background: #fff;
+      color: #0f172a;
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.25);
+      font-size: 13px;
+      font-weight: 600;
+      animation: bob 6s ease-in-out infinite;
+    }
+
+    .tile.f2 { animation-delay: -2s; animation-duration: 7s; }
+    .tile.f3 { animation-delay: -4s; animation-duration: 8s; }
+
+    .tile small {
+      display: block;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .tile .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 5px 0;
+      border-top: 1px solid #eef0f4;
+      font-weight: 500;
+    }
+
+    .tile .row:first-of-type {
+      border-top: 0;
+    }
+
+    .tile .row b {
+      font-weight: 650;
+    }
+
+    .tile .btn-ish {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 12px;
+      background: #315efb;
+      color: #fff;
+      border-radius: 8px;
+      font-weight: 650;
+    }
+
+    .tile .btn-ish.ghost {
+      background: #eef2ff;
+      color: #315efb;
+    }
+
+    .tile .block {
+      display: block;
+      padding: 6px 8px;
+      margin-top: 6px;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .tile .block.open { background: #2f7d4a; }
+    .tile .block.booked { background: #b42318; }
+
+    .chip {
+      position: absolute;
+      padding: 7px 12px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #0f172a;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 650;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+      animation: bob 5s ease-in-out infinite;
+    }
+
+    .chip.f2 { animation-delay: -1.5s; }
+    .chip.f3 { animation-delay: -3s; animation-duration: 6.5s; }
+
+    .chip.ok { background: #2f7d4a; color: #fff; }
+
+    /* scene 1: the address */
+    .tile-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+
+    .tile-bar .dots {
+      display: inline-flex;
+      gap: 4px;
+    }
+
+    .tile-bar .dots i {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #e2e8f0;
+    }
+
+    .tile-bar b {
+      color: #315efb;
+    }
+
+    .caret {
+      display: inline-block;
+      width: 2px;
+      height: 14px;
+      margin-left: 1px;
+      vertical-align: -2px;
+      background: #0f172a;
+      animation: blink 1s steps(2) infinite;
+    }
+
+    @keyframes blink {
+      to { opacity: 0; }
+    }
+
+    /* scene 3: a request answered, again and again */
+    .s3 .chip.ok {
+      animation: pop 5s ease-in-out infinite;
+    }
+
+    @keyframes pop {
+      0%, 55% { opacity: 0; transform: translateY(10px) scale(0.9); }
+      65%, 90% { opacity: 1; transform: none; }
+      100% { opacity: 0; transform: translateY(-6px); }
+    }
+
+    /* scene 4: a session hops across to Google */
+    .hop {
+      animation: hop 4s ease-in-out infinite;
+    }
+
+    @keyframes hop {
+      0%, 20% { transform: translateX(0); }
+      50%, 70% { transform: translateX(var(--hop, 180px)); }
+      100% { transform: translateX(0); }
+    }
+
+    /* scene 5: a block tries on every color */
+    .swatches {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .swatches i {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+    }
+
+    .tile .block.hue {
+      animation: hue 8s linear infinite;
+    }
+
+    @keyframes hue {
+      0%   { background: #b42318; }
+      20%  { background: #c2410c; }
+      40%  { background: #a16207; }
+      60%  { background: #1d4ed8; }
+      80%  { background: #6d28d9; }
+      100% { background: #b42318; }
+    }
+
+    /* scene 6: switches */
+    .sw {
+      display: inline-block;
+      width: 30px;
+      height: 17px;
+      border-radius: 999px;
+      background: #315efb;
+      position: relative;
+      vertical-align: middle;
+    }
+
+    .sw::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 15px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #fff;
+    }
+
+    .sw.off { background: #cbd5e1; }
+    .sw.off::after { left: 2px; }
+
+    /* scene 7: a name that visitors never see */
+    .veil {
+      position: relative;
+      display: block;
+      margin-top: 6px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #b42318;
+      color: #fff;
+      font-size: 12px;
+      overflow: hidden;
+    }
+
+    .veil span {
+      display: block;
+      animation: veil 5s ease-in-out infinite;
+    }
+
+    .veil span + span {
+      position: absolute;
+      inset: 6px 8px;
+      animation-delay: -2.5s;
+    }
+
+    @keyframes veil {
+      0%, 40% { opacity: 1; }
+      50%, 90% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
+    /* scene 8: earlier saves, stacked */
+    .stack .row {
+      align-items: center;
+    }
+
+    /* scene 9: one word in six languages */
+    .words {
+      position: relative;
+      height: 34px;
+      margin-top: 4px;
+      font-size: 22px;
+      font-weight: 750;
+      color: #2f7d4a;
+    }
+
+    .words span {
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      animation: cycle6 12s linear infinite;
+      animation-delay: calc(var(--i) * -2s);
+    }
+
+    @keyframes cycle6 {
+      0%, 14% { opacity: 1; transform: none; }
+      17%, 97% { opacity: 0; transform: translateY(6px); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    /* ---- What your visitors see: a gradient band, a card in the middle, pills around it */
+    .band-stories {
+      background: linear-gradient(160deg, #315efb 0%, #7c3aed 45%, #f472b6 80%, #fdba74 100%);
+      color: #fff;
+    }
+
+    .band-stories h2,
+    .band-stories .stories-lede {
+      text-align: center;
+      color: #fff;
+    }
+
+    .band-stories .stories-lede {
+      max-width: 720px;
+      margin: -6px auto 36px;
+      font-size: 16px;
+      line-height: 1.55;
+      opacity: 0.9;
+    }
+
+    .stories-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+    }
+
+    .stories-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 32px;
+      align-items: center;
+      max-width: min(900px, 60%);
+      padding: 28px 32px;
+      background: #fff;
+      color: #0f172a;
+      border-radius: 28px;
+      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
+    }
+
+    .stories-card ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .stories-card li {
+      position: relative;
+      margin: 0 0 12px;
+      padding-left: 28px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .stories-card li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      top: -1px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #dff3e6;
+      color: #2f7d4a;
+      text-align: center;
+      font-size: 12px;
+      line-height: 20px;
+      font-weight: 750;
+    }
+
+    .stories-card .home-phone {
+      background: #fff;
+      color: #0f172a;
+      border-color: #e5e7eb;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+    }
+
+    .stories-card .home-phone-day small {
+      color: #64748b;
+    }
+
+    .story-pill {
+      flex: 0 0 auto;
+      padding: 7px;
+      background: #fff;
+      border-radius: 999px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+      animation: bob 7s ease-in-out infinite;
+    }
+
+    .story-pill.p-a { width: 74px; height: 190px; animation-delay: -1s; }
+    .story-pill.p-b { width: 100px; height: 320px; animation-delay: -3s; animation-duration: 8s; }
+    .story-pill.p-c { width: 100px; height: 320px; animation-delay: -5s; animation-duration: 9s; }
+    .story-pill.p-d { width: 74px; height: 190px; animation-delay: -2s; }
+
+    .pill-inner {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+      height: 100%;
+      padding: 12px 8px;
+      border-radius: 999px;
+    }
+
+    .pill-inner i {
+      display: block;
+      height: 12px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.85);
+    }
+
+    .pill-inner i:nth-child(2) { width: 70%; }
+    .pill-inner i:nth-child(3) { width: 85%; }
+    .pill-inner i:nth-child(4) { width: 55%; }
+
+    .pill-inner.t-a { background: linear-gradient(180deg, #2f7d4a, #0f766e); }
+    .pill-inner.t-b { background: linear-gradient(180deg, #f97316, #db2777); }
+    .pill-inner.t-c { background: linear-gradient(180deg, #315efb, #6d28d9); }
+    .pill-inner.t-d { background: linear-gradient(180deg, #a16207, #b42318); }
+
+    /* ---- made for: chips of every color */
+    .home-chips span:nth-child(6n+1) { border-color: #315efb; color: #315efb; }
+    .home-chips span:nth-child(6n+2) { border-color: #2f7d4a; color: #2f7d4a; }
+    .home-chips span:nth-child(6n+3) { border-color: #c2410c; color: #c2410c; }
+    .home-chips span:nth-child(6n+4) { border-color: #6d28d9; color: #6d28d9; }
+    .home-chips span:nth-child(6n+5) { border-color: #be185d; color: #be185d; }
+    .home-chips span:nth-child(6n+6) { border-color: #0f766e; color: #0f766e; }
+
+    /* ---- questions: a colored edge on the open one */
+    .home-faq details {
+      border-left: 4px solid transparent;
+      transition: border-color 0.25s ease;
+    }
+
+    .home-faq details[open] {
+      border-left-color: #6d28d9;
+    }
+
+    /* ---- ready: a gradient band */
+    .band-ready {
+      background: linear-gradient(120deg, #1d4ed8 0%, #6d28d9 60%, #be185d 100%);
+      color: #fff;
+    }
+
+    .band-ready h2,
+    .band-ready p {
+      color: #fff;
+    }
+
+    .band-ready p {
+      opacity: 0.9;
+    }
+
+    .band-ready .btn.primary {
+      background: #fff;
+      color: #1d4ed8;
+      border-color: #fff;
+    }
+
+    @media (max-width: 1100px) {
+      .story-pill.p-a,
+      .story-pill.p-d {
+        display: none;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .home-features-wrap {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "title"
+          "stage"
+          "list";
+        gap: 20px 0;
+      }
+
+      .feature-stage {
+        position: static;
+        aspect-ratio: 1 / 0.9;
+      }
+
+      .story-pill {
+        display: none;
+      }
+
+      .stories-card {
+        grid-template-columns: 1fr;
+        justify-items: center;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tile,
+      .chip,
+      .story-pill,
+      .caret,
+      .hop,
+      .tile .block.hue,
+      .veil span,
+      .words span,
+      .feature-item.active .feature-progress {
+        animation: none;
+      }
+
+      .words span:first-child,
+      .veil span:first-child {
+        opacity: 1;
+      }
+
+      .scene,
+      .feature-body,
+      .feature-head {
+        transition: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blob,
+      .hero-in,
+      .home-preview,
+      .home-phone,
+      .home-phone-btn::after,
+      .home-chips-track,
+      .home-faq details p {
+        animation: none;
+      }
+
+      .reveal,
+      .home-preview-block.ghost,
+      .home-preview-cursor,
+      .home-preview-request,
+      .home-preview-toast,
+      .home-preview-pill,
+      .home-step::before {
+        transition: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      .home-step.reveal:not(.in)::before {
+        transform: none;
+      }
+    }
+
+    .home-hero h1 {
+      margin: 8px 0 14px;
+      font-size: clamp(34px, 4.8vw, 60px);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      background: linear-gradient(100deg, var(--text) 0%, var(--text) 45%, #315efb 80%, #6d28d9 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: var(--text);
+    }
+
+    .home-demo {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      font-weight: 650;
+      text-decoration: none;
+    }
+
+    .home-demo::after {
+      content: "→";
+      transition: transform 0.2s ease;
+    }
+
+    .home-demo:hover::after {
+      transform: translateX(4px);
+    }
+
+    .home-hero .lede {
+      margin: 0 0 24px;
+      font-size: 18px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .home-cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .home-cta .btn {
+      padding: 12px 18px;
+      font-size: 16px;
+      text-decoration: none;
+    }
+
+    .home-free {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .home-preview {
+      padding: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px var(--shadow);
+    }
+
+    .home-preview-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .home-preview-bar strong {
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .home-preview-pill {
+      padding: 4px 9px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      font-weight: 650;
+    }
+
+    .home-preview-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .home-preview-day {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 150px;
+      padding: 6px;
+      background: var(--surface-2);
+      border-radius: 8px;
+    }
+
+    .home-preview-day small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .home-preview-block {
+      padding: 5px 6px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 650;
+      color: #fff;
+    }
+
+    .home-preview-block.open { background: #2f7d4a; }
+    .home-preview-block.booked { background: #b42318; }
+    .home-preview-block.blue { background: #1d4ed8; }
+    .home-preview-block.purple { background: #6d28d9; }
+
+    .home-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      counter-reset: step;
+    }
+
+    .home-step {
+      padding: 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .home-step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      margin-bottom: 12px;
+      background: var(--accent-tint);
+      color: var(--accent);
+      border-radius: 50%;
+      font-weight: 750;
+    }
+
+    .home-step strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 17px;
+    }
+
+    .home-step span,
+    .home-faq p {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .home-phone {
+      justify-self: center;
+      width: 280px;
+      padding: 14px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: 0 20px 60px var(--shadow);
+    }
+
+    .home-phone-head {
+      margin: 0 0 10px;
+      font-weight: 750;
+      font-size: 14px;
+    }
+
+    .home-phone-day {
+      margin-bottom: 10px;
+    }
+
+    .home-phone-day small {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+
+    .home-phone .home-preview-block {
+      margin-bottom: 4px;
+    }
+
+    .home-phone-btn {
+      margin-top: 8px;
+      padding: 9px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 10px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .home-chips {
+      display: flex;
+      gap: 10px;
+    }
+
+    .home-chips span {
+      white-space: nowrap;
+    }
+
+    .home-chips span {
+      padding: 9px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .home-faq details {
+      padding: 14px 18px;
+      margin-bottom: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .home-faq summary {
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 16px;
+    }
+
+    .home-faq p {
+      margin: 10px 0 0;
+    }
+
+    .home-ready {
+      text-align: center;
+    }
+
+    .home-ready h2 {
+      margin-bottom: 8px;
+    }
+
+    .home-ready p {
+      margin: 0 0 18px;
+    }
+
+    .home-foot {
+      padding: 24px 5vw 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .home-foot .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .home-foot p {
+      margin: 6px 0;
+    }
+
+    .home-foot-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 18px;
+      margin: 6px 0;
+    }
+
+    .home-foot-links a,
+    .home-foot-links button {
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--muted);
+      font: inherit;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .home-foot-links a:hover,
+    .home-foot-links button:hover {
+      color: var(--text);
+    }
+
+    /* ---- the way in */
+
+    .auth-card {
+      width: min(440px, 100%);
+      padding: 22px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px var(--shadow);
+      max-height: 92vh;
+      overflow: auto;
+    }
+
+    .auth-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .auth-tabs {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+      margin-right: 12px;
+      padding: 4px;
+      background: var(--surface-2);
+      border-radius: 10px;
+    }
+
+    .auth-tabs button {
+      flex: 1;
+      padding: 8px;
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      border-radius: 8px;
+      font-weight: 650;
+    }
+
+    .auth-tabs button[aria-selected="true"] {
+      background: var(--card);
+      color: var(--text);
+      box-shadow: 0 1px 3px var(--shadow);
+    }
+
+    .auth-card h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    .auth-card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .auth-card .btn.primary {
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .auth-links {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 12px 0 0;
+      font-size: 13px;
+    }
+
+    .auth-links a,
+    .auth-links button {
+      padding: 0;
+      background: none;
+      border: 0;
+      color: var(--accent);
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .auth-links a:hover,
+    .auth-links button:hover {
+      text-decoration: underline;
+    }
+
+    .auth-ok {
+      margin-bottom: 10px;
+      padding: 12px 14px;
+      background: var(--ok-bg);
+      border: 1px solid var(--ok-border);
+      border-radius: 10px;
+      color: var(--ok-text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .auth-ok code {
+      word-break: break-all;
+    }
+
+    .auth-ok .btn {
+      margin-top: 10px;
+    }
+
+    @media (max-width: 860px) {
+      .home-hero {
+        grid-template-columns: 1fr;
+      }
+
+      .home-nav {
+        display: none;
+      }
+
+      .home-preview-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .home-preview-day:nth-child(n+4) {
+        display: none;
+      }
+
+      .band {
+        padding: 44px 5vw;
+      }
+
+      .band-hero {
+        padding-top: 48px;
+        padding-bottom: 48px;
+      }
+    }
+  </style>
 </head>
-
 
 <body>
 
-  <div class="app-shell">
+  <header class="home-top">
+    <span class="home-progress" aria-hidden="true"></span>
+    <div class="home-top-inner">
+      <a class="home-brand" href="/">
+        <img src="/icon-192.png" alt="">
+        <span id="siteName">MyOpenings</span>
+      </a>
+      <nav class="home-nav">
+        <a href="#how" data-i18n="home_how">How it works</a>
+        <a href="#features" data-i18n="home_features">Everything included</a>
+        <a href="#visitors" data-i18n="home_visitors">What your visitors see</a>
+        <a href="#faq" data-i18n="home_faq">Questions</a>
+      </nav>
+      <div class="home-top-actions">
+        <select id="langSelect" class="lang-select" aria-label="Language" title="Language"></select>
+        <button id="themeBtn" class="icon-btn theme-btn" type="button" data-i18n-title="theme" title="Switch between light and dark" aria-label="Switch between light and dark">
+          <span id="themeIcon" aria-hidden="true">☾</span>
+        </button>
+        <button id="topLoginBtn" class="btn secondary" type="button" data-i18n="auth_login">Log in</button>
+        <button id="topSignupBtn" class="btn primary" type="button" data-i18n="auth_signup">Sign up</button>
+      </div>
+    </div>
+  </header>
 
-    <header class="topbar">
+  <main class="home">
 
+    <section class="band band-hero">
+    <span class="blob blob-a" aria-hidden="true"></span>
+    <span class="blob blob-b" aria-hidden="true"></span>
+    <span class="blob blob-c" aria-hidden="true"></span>
+    <div class="wrap home-hero">
       <div>
-
-        <h1 id="portalTitle">
-          Ethan's Tutoring Availability
-        </h1>
-
-        <div class="subline">
-
-          <span id="timezoneLabel">
-            Pacific Time (PT)
-          </span>
-
-          <span>•</span>
-
-          <span
-            id="updatedLabel"
-            title="When the tutor last changed the schedule itself"
-          >
-            Loading…
-          </span>
-
-          <span>•</span>
-
-          <span
-            id="checkedLabel"
-            title="When this page last fetched the schedule from the server"
-          ></span>
-
+        <h1 class="hero-in" data-i18n="home_tagline">Share when you're free, at a link of your own.</h1>
+        <p class="lede hero-in" style="--d: 120ms" data-i18n="home_lede">A calendar of your open and booked time, by day, week or month. Visitors see what is open, ask for a session with their contact details, and you get an email. Everything else - hours, colors, wording, time zone, language - is yours to set.</p>
+        <div class="home-cta hero-in" style="--d: 240ms">
+          <button id="heroSignupBtn" class="btn primary" type="button" data-i18n="home_cta_signup">Create your calendar</button>
+          <button id="heroLoginBtn" class="btn secondary" type="button" data-i18n="home_cta_login">Log in</button>
         </div>
-
+        <p class="home-free hero-in" style="--d: 360ms"><span data-i18n="home_free">Free. No app to install. Works on any device.</span> <a id="heroDemo" class="home-demo hidden" href="/demo" data-i18n="home_demo">See an example calendar</a></p>
       </div>
-
-
-      <div class="header-actions">
-
-        <button
-          id="refreshBtn"
-          class="btn secondary"
-        >
-          Refresh
-        </button>
-
-        <button
-          id="requestBtn"
-          class="btn primary"
-        >
-          Request a session
-        </button>
-
-        <button
-          id="adminBtn"
-          class="btn secondary"
-        >
-          Admin
-        </button>
-
-        <button
-          id="requestsBtn"
-          class="btn secondary hidden"
-        >
-
-          Requests
-
-          <span
-            id="requestCount"
-            class="blocked-count"
-          >
-            0
-          </span>
-
-        </button>
-
-        <button
-          id="blockedSessionsBtn"
-          class="btn secondary hidden"
-        >
-          Blocked Sessions
-        </button>
-
-        <button
-          id="googleSyncBtn"
-          class="btn secondary hidden"
-          title="Push every booked session to Google Calendar again"
-        >
-          Sync Google Calendar
-        </button>
-
-        <button
-          id="addBtn"
-          class="btn primary hidden"
-        >
-          + Add time
-        </button>
-
-      </div>
-
-    </header>
-
-
-    <section
-      id="adminBanner"
-      class="admin-banner hidden"
-    >
-
-      <div>
-
-        <strong>
-          Admin mode
-        </strong>
-
-        <span>
-          Click a session to edit it; click anywhere else to add one.
-          Right-click for copy, duplicate and delete.
-          Drag any block to move it.
-        </span>
-
-      </div>
-
-      <div class="admin-banner-actions">
-
-        <button
-          id="undoBtn"
-          class="text-btn hidden"
-          title="Undo (Ctrl+Z)"
-          disabled
-        >
-          Undo
-        </button>
-
-        <button
-          id="redoBtn"
-          class="text-btn hidden"
-          title="Redo (Ctrl+Shift+Z)"
-          disabled
-        >
-          Redo
-        </button>
-
-        <button
-          id="historyBtn"
-          class="text-btn hidden"
-          title="Every version of the schedule, newest first - restore any of them"
-        >
-          Version history
-        </button>
-
-        <button
-          id="exitAdminBtn"
-          class="text-btn"
-        >
-          Public view
-        </button>
-
-        <button
-          id="signOutBtn"
-          class="text-btn hidden"
-          title="Forget this device - the password will be asked for again"
-        >
-          Sign out
-        </button>
-
-      </div>
-
-    </section>
-
-
-    <!-- WEEK SUMMARY (ADMIN) -->
-
-    <section
-      id="weekSummary"
-      class="week-summary hidden"
-    >
-
-      <div class="week-summary-totals">
-
-        <div class="week-summary-stat">
-
-          <span
-            id="summaryHours"
-            class="week-summary-number"
-          >
-            0
-          </span>
-
-          <span class="week-summary-label">
-            hours blocked this week
-          </span>
-
+      <div id="homePreview" class="home-preview" data-step="0" aria-hidden="true">
+        <div class="home-preview-bar"><strong>Ethan's Tutoring</strong><span class="home-preview-pill">Request a session</span></div>
+        <div class="home-preview-grid">
+          <div class="home-preview-day"><small>Mon</small><span class="home-preview-block open">Available 4–7 PM</span></div>
+          <div class="home-preview-day"><small>Tue</small><span class="home-preview-block booked">Booked</span><span class="home-preview-block open">Available 6–8 PM</span><span class="home-preview-block booked ghost ghost-booked">Maya · 6–7 PM</span></div>
+          <div class="home-preview-day"><small>Wed</small><span class="home-preview-block blue">Booked</span><span class="home-preview-block purple">Booked</span><span class="home-preview-block open ghost ghost-open">Available 5–7 PM</span></div>
+          <div class="home-preview-day"><small>Thu</small><span class="home-preview-block open">Available 3–6 PM</span><span class="home-preview-block booked">Booked</span></div>
+          <div class="home-preview-day"><small>Fri</small><span class="home-preview-block open">Available all day</span></div>
         </div>
-
-        <div class="week-summary-stat">
-
-          <span
-            id="summaryStudents"
-            class="week-summary-number"
-          >
-            0
-          </span>
-
-          <span class="week-summary-label">
-            students
-          </span>
-
-        </div>
-
-        <button
-          id="summaryToggle"
-          class="text-btn"
-          type="button"
-          aria-expanded="false"
-          aria-controls="summaryList"
-        >
-          Show each student
-        </button>
-
+        <div class="home-preview-request"><strong>New request</strong><span>Maya · Tue 6–7 PM · maya@…</span><em>Accept</em></div>
+        <div class="home-preview-toast">✓ Confirmed · Maya, Tue 6–7 PM</div>
+        <span class="home-preview-cursor"></span>
       </div>
-
-      <ul
-        id="summaryList"
-        class="week-summary-list hidden"
-      >
-      </ul>
-
-    </section>
-
-
-    <section class="calendar-toolbar">
-
-      <button
-        id="prevWeekBtn"
-        class="icon-btn"
-        aria-label="Previous week"
-      >
-        ‹
-      </button>
-
-      <button
-        id="todayBtn"
-        class="btn secondary small"
-      >
-        Today
-      </button>
-
-      <button
-        id="nextWeekBtn"
-        class="icon-btn"
-        aria-label="Next week"
-      >
-        ›
-      </button>
-
-      <div
-        class="view-toggle"
-        role="group"
-        aria-label="Calendar layout"
-      >
-
-        <button
-          id="viewGridBtn"
-          class="btn secondary small"
-          aria-pressed="true"
-        >
-          Grid
-        </button>
-
-        <button
-          id="viewListBtn"
-          class="btn secondary small"
-          aria-pressed="false"
-        >
-          List
-        </button>
-
-      </div>
-
-      <div
-        class="view-switch"
-        role="group"
-        aria-label="Calendar view"
-      >
-
-        <button
-          id="viewDayBtn"
-          class="btn secondary small"
-          aria-pressed="false"
-        >
-          Day
-        </button>
-
-        <button
-          id="viewWeekBtn"
-          class="btn secondary small"
-          aria-pressed="true"
-        >
-          Week
-        </button>
-
-        <button
-          id="viewMonthBtn"
-          class="btn secondary small"
-          aria-pressed="false"
-        >
-          Month
-        </button>
-
-      </div>
-
-      <button
-        id="saveWeekBtn"
-        class="btn secondary small"
-      >
-        Screenshot weekly schedule
-      </button>
-
-      <h2 id="weekLabel"></h2>
-
-
-      <div class="legend">
-
-        <span>
-
-          <i class="legend-swatch available"></i>
-
-          Available
-
-        </span>
-
-        <span>
-
-          <i class="legend-swatch blocked"></i>
-
-          Blocked Session
-
-        </span>
-
-      </div>
-
-    </section>
-
-
-    <div
-      id="status"
-      class="status"
-      aria-live="polite"
-    ></div>
-
-
-    <!-- GOOGLE SYNC NOTICE (ADMIN) -->
-
-    <div
-      id="syncNotice"
-      class="sync-notice hidden"
-      role="status"
-    >
-
-      <span id="syncNoticeText"></span>
-
-      <button
-        id="syncNoticeRetryBtn"
-        class="text-btn"
-      >
-        Sync now
-      </button>
-
-      <button
-        id="syncNoticeCloseBtn"
-        class="text-btn"
-        aria-label="Dismiss"
-      >
-        Dismiss
-      </button>
-
     </div>
-
-
-    <div
-      id="calendar"
-      class="calendar"
-    ></div>
-
-
-    <div
-      id="agenda"
-      class="agenda"
-    ></div>
-
-
-    <section class="help-box">
-
-      <strong>
-        Public view:
-      </strong>
-
-      Upcoming available times and anonymized blocked sessions are shown.
-      Times that have already passed are hidden, and private event names
-      and notes are never shown.
-
     </section>
 
-  </div>
+    <section id="how" class="band">
+    <div class="wrap">
+      <h2 data-i18n="home_how">How it works</h2>
+      <div class="home-steps">
+        <div class="home-step"><strong data-i18n="home_step1_t">Set your hours</strong><span data-i18n="home_step1_d">Mark the times you are open each week, once or repeating. Booked time goes in beside it, in any color you like.</span></div>
+        <div class="home-step"><strong data-i18n="home_step2_t">Share your link</strong><span id="step2Text" data-i18n="home_step2_d">Your calendar lives at {host}/you. Send the link to anyone - a parent, a student, a client. They need no account.</span></div>
+        <div class="home-step"><strong data-i18n="home_step3_t">Get requests by email</strong><span data-i18n="home_step3_d">A visitor picks an open time and leaves their name, email and phone. You get an email, and you accept or decline in one click.</span></div>
+      </div>
+    </div>
+    </section>
 
+    <section id="features" class="band band-alt">
+    <div class="wrap home-features-wrap">
+        <h2 class="features-title" data-i18n="home_features">Everything included</h2>
+        <ol id="featureList" class="feature-list">
+        <li class="feature-item" data-scene="1">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span><strong data-i18n="home_f1_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f1_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="2">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><strong data-i18n="home_f2_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f2_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="3">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span><strong data-i18n="home_f3_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f3_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="4">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><strong data-i18n="home_f4_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f4_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="5">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="10" r="1.2" fill="currentColor"/><path d="M12 12v9"/></svg></span><strong data-i18n="home_f5_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f5_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="6">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="18" cy="16" r="3"/></svg></span><strong data-i18n="home_f6_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f6_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="7">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg></span><strong data-i18n="home_f7_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f7_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="8">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg></span><strong data-i18n="home_f8_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f8_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        <li class="feature-item" data-scene="9">
+          <button type="button" class="feature-head" aria-expanded="false"><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg></span><strong data-i18n="home_f9_t"></strong></button>
+          <div class="feature-body"><p data-i18n="home_f9_d"></p></div>
+          <span class="feature-progress"></span>
+        </li>
+        </ol>
+      <div id="featureStage" class="feature-stage" data-scene="1" aria-hidden="true">
+        <div class="scene s1">
+          <div class="tile tile-bar" style="top: 22%; left: 12%; width: 70%"><span class="dots"><i></i><i></i><i></i></span><span>calendar.app/<b>maya</b><i class="caret"></i></span></div>
+          <div class="chip f2" style="top: 52%; left: 18%">Copy link</div>
+          <div class="chip f3" style="top: 60%; left: 50%" data-i18n="home_sent_anywhere">Sent from any device</div>
+          <div class="tile f3" style="top: 70%; left: 30%"><small>Change it any time</small>calendar.app/<b style="color:#315efb">maya-tutoring</b></div>
+        </div>
+        <div class="scene s2">
+          <div class="tile" style="top: 14%; left: 14%; width: 60%"><small>Request a session</small><div class="row"><span>Name</span><b>Maya Chen</b></div><div class="row"><span>Email</span><b>maya@…</b></div><div class="row"><span>Phone</span><b>(626) 555-0142</b></div><div class="row"><span>Parent</span><b>Lin Chen</b></div><span class="btn-ish">Send request</span></div>
+          <div class="chip f2" style="top: 12%; left: 70%">Tue 4–5 PM</div>
+          <div class="chip f3 ok" style="top: 76%; left: 56%">Reply from your inbox</div>
+        </div>
+        <div class="scene s3">
+          <div class="tile f2" style="top: 18%; left: 12%; width: 66%"><small>New request</small><b>Maya Chen</b> · Tue 4–5 PM<div class="row"><span>maya@example.com</span></div><span class="btn-ish">Accept</span> <span class="btn-ish ghost">Decline</span></div>
+          <div class="chip ok" style="top: 66%; left: 30%">✓ Accepted · Maya was emailed</div>
+          <div class="chip f3" style="top: 78%; left: 62%">Requests · 1</div>
+        </div>
+        <div class="scene s4">
+          <div class="tile" style="top: 22%; left: 8%; width: 36%"><small>Your calendar</small><span class="block booked">Maya · 4–5 PM</span><span class="block open">Available 5–7</span></div>
+          <div class="tile f3" style="top: 22%; left: 56%; width: 36%"><small>Google Calendar</small><span class="block" style="background:#e2e8f0;color:#94a3b8">Blocked</span><span class="block" style="background:#e2e8f0;color:#94a3b8">Blocked</span></div>
+          <div class="chip hop" style="top: 62%; left: 14%; --hop: 200px">Blocked · Tue 4–5 PM →</div>
+          <div class="chip f2" style="top: 80%; left: 34%">+ a feed for any other app</div>
+        </div>
+        <div class="scene s5">
+          <div class="tile" style="top: 14%; left: 12%; width: 50%"><small>Colors</small><div class="swatches"><i style="background:#b42318"></i><i style="background:#c2410c"></i><i style="background:#a16207"></i><i style="background:#2f7d4a"></i><i style="background:#1d4ed8"></i><i style="background:#6d28d9"></i><i style="background:#be185d"></i></div><span class="block hue">Kai · piano</span></div>
+          <div class="chip f2" style="top: 22%; left: 68%">Monday weeks</div>
+          <div class="chip f3" style="top: 58%; left: 60%">24-hour clock</div>
+          <div class="tile f2" style="top: 62%; left: 10%"><small>Your words</small>“Open” · “Lesson” · “clients”</div>
+          <div class="chip" style="top: 82%; left: 46%">Pacific Time · Serif</div>
+        </div>
+        <div class="scene s6">
+          <div class="tile" style="top: 16%; left: 14%; width: 62%"><small>Rules for requests</small><div class="row"><span>Visitors can request</span><span class="sw"></span></div><div class="row"><span>Notice needed</span><b>24 h</b></div><div class="row"><span>How far ahead</span><b>8 weeks</b></div><div class="row"><span>Session length</span><b>30–120 min</b></div><div class="row"><span>Show the calendar only</span><span class="sw off"></span></div></div>
+          <div class="chip f3" style="top: 80%; left: 40%">Saved</div>
+        </div>
+        <div class="scene s7">
+          <div class="tile" style="top: 20%; left: 10%; width: 40%"><small>You see</small><span class="block booked">Maya · Algebra II</span><span class="block open">Available 5–7</span></div>
+          <div class="tile f3" style="top: 20%; left: 54%; width: 40%"><small>Visitors see</small><span class="veil"><span>Maya · Algebra II</span><span>Booked</span></span><span class="block open">Available 5–7</span></div>
+          <div class="chip f2" style="top: 72%; left: 28%">Names and notes never leave your view</div>
+        </div>
+        <div class="scene s8">
+          <div class="tile stack" style="top: 14%; left: 14%; width: 62%"><small>Version history</small><div class="row"><b>Today, 9:14 AM</b><span>moved Maya</span></div><div class="row"><b>Yesterday</b><span>added Kai</span></div><div class="row"><b>Sep 12</b><span>new series</span><span class="btn-ish ghost" style="margin:0">Restore</span></div></div>
+          <div class="chip f2" style="top: 72%; left: 20%">Undo · Ctrl+Z</div>
+          <div class="chip f3" style="top: 80%; left: 54%">Redo · Ctrl+Y</div>
+        </div>
+        <div class="scene s9">
+          <div class="tile" style="top: 22%; left: 14%; width: 56%"><small>Their browser picks</small><div class="words"><span style="--i:0">Available</span><span style="--i:1">Disponible</span><span style="--i:2">可预约</span><span style="--i:3">Disponible</span><span style="--i:4">예약 가능</span><span style="--i:5">Có thể đặt</span></div></div>
+          <div class="chip f2" style="top: 16%; left: 72%">English</div>
+          <div class="chip f3" style="top: 60%; left: 66%">Español</div>
+          <div class="chip" style="top: 74%; left: 18%">中文 · Français</div>
+          <div class="chip f2" style="top: 84%; left: 50%">한국어 · Tiếng Việt</div>
+        </div>
+      </div>
+    </div>
+    </section>
 
+    <section id="visitors" class="band band-stories">
+    <div class="wrap stories">
+      <h2 data-i18n="home_visitors">What your visitors see</h2>
+      <p class="stories-lede" data-i18n="home_visitors_d"></p>
+      <div class="stories-row">
+      <div class="story-pill p-a" aria-hidden="true"><div class="pill-inner t-a"><i></i><i></i><i></i></div></div>
+      <div class="story-pill p-b" aria-hidden="true"><div class="pill-inner t-b"><i></i><i></i><i></i><i></i></div></div>
+      <div class="stories-card">
+        <ul>
+          <li data-i18n="home_v1"></li>
+          <li data-i18n="home_v2"></li>
+          <li data-i18n="home_v3"></li>
+          <li data-i18n="home_v4"></li>
+        </ul>
+      <div class="home-phone" aria-hidden="true">
+        <p class="home-phone-head">Ethan's Tutoring</p>
+        <div class="home-phone-day"><small>Tuesday</small><span class="home-preview-block booked">Booked · 3 – 4 PM</span><span class="home-preview-block open">Available · 4 – 8 PM</span></div>
+        <div class="home-phone-day"><small>Wednesday</small><span class="home-preview-block open">Available · 5 – 9 PM</span></div>
+        <div class="home-phone-day"><small>Thursday</small><span class="home-preview-block open">Available · 3 – 6 PM</span><span class="home-preview-block booked">Booked · 6 – 7 PM</span></div>
+        <div class="home-phone-btn" data-i18n="request">Request a session</div>
+      </div>
+      </div>
+      <div class="story-pill p-c" aria-hidden="true"><div class="pill-inner t-c"><i></i><i></i><i></i><i></i></div></div>
+      <div class="story-pill p-d" aria-hidden="true"><div class="pill-inner t-d"><i></i><i></i><i></i></div></div>
+      </div>
+    </div>
+    </section>
 
-  <!-- SESSION REQUEST (PUBLIC) -->
+    <section id="madefor" class="band band-alt">
+    <div class="wrap">
+      <h2 data-i18n="home_madefor">Made for</h2>
+      <div class="home-marquee">
+        <div id="homeChips" class="home-chips home-chips-track">
+          <span data-i18n="home_m1"></span><span data-i18n="home_m2"></span><span data-i18n="home_m3"></span>
+          <span data-i18n="home_m4"></span><span data-i18n="home_m5"></span><span data-i18n="home_m6"></span>
+        </div>
+      </div>
+    </div>
+    </section>
 
-  <div
-    id="requestModal"
-    class="modal-backdrop hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="requestModalTitle"
-  >
+    <section id="faq" class="band home-faq">
+    <div class="wrap">
+      <h2 data-i18n="home_faq">Questions</h2>
+      <details><summary data-i18n="home_q1"></summary><p data-i18n="home_a1"></p></details>
+      <details><summary data-i18n="home_q2"></summary><p data-i18n="home_a2"></p></details>
+      <details><summary data-i18n="home_q3"></summary><p data-i18n="home_a3"></p></details>
+      <details><summary data-i18n="home_q4"></summary><p data-i18n="home_a4"></p></details>
+      <details><summary data-i18n="home_q5"></summary><p data-i18n="home_a5"></p></details>
+    </div>
+    </section>
 
-    <div class="modal-card">
+    <section class="band band-ready home-ready">
+    <div class="wrap">
+      <h2 data-i18n="home_ready">Ready when you are.</h2>
+      <p data-i18n="home_ready_d"></p>
+      <button id="readySignupBtn" class="btn primary" type="button" data-i18n="home_cta_signup">Create your calendar</button>
+    </div>
+    </section>
 
-      <div class="modal-header">
+    <footer class="home-foot">
+    <div class="wrap">
+      <p><span id="footSite"></span> · <span data-i18n="home_footer"></span></p>
+      <nav class="home-foot-links">
+        <a id="footDemo" class="hidden" href="/demo" data-i18n="home_demo"></a>
+        <a href="#faq" data-i18n="home_faq"></a>
+        <button type="button" id="footLoginBtn" data-i18n="auth_login"></button>
+      </nav>
+      <p id="footNote"></p>
+    </div>
+    </footer>
 
-        <h2 id="requestModalTitle">
-          Request a session
-        </h2>
+  </main>
 
-        <button
-          class="close-btn"
-          data-close="requestModal"
-          aria-label="Close"
-        >
-          ×
-        </button>
+  <!-- THE WAY IN -->
 
+  <div id="authModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="auth-card" id="authCard">
+
+      <div class="auth-head">
+        <div class="auth-tabs" id="authTabs" role="tablist">
+          <button type="button" id="tabLogin" role="tab" aria-selected="true" data-i18n="auth_login">Log in</button>
+          <button type="button" id="tabSignup" role="tab" aria-selected="false" data-i18n="auth_signup">Sign up</button>
+        </div>
+        <button type="button" id="authClose" class="close-btn" data-i18n-title="close" aria-label="Close">×</button>
       </div>
 
-
-      <p class="request-intro">
-        Ask for a time that works for you. Nothing is booked until
-        the tutor confirms it.
-      </p>
-
-
-      <!-- NAME -->
-
-      <label class="field">
-
-        <span>
-          Your name
-        </span>
-
-        <input
-          id="requestName"
-          type="text"
-          maxlength="80"
-          required
-          placeholder="e.g. John"
-        >
-
-      </label>
-
-
-
-      <!-- START AND END -->
-
-      <div class="two-col">
-
-        <div class="field">
-
-          <span>
-            Starts
-          </span>
-
-          <div class="datetime-field">
-
-            <input
-              id="requestStartDate"
-              type="date"
-              class="datetime-date"
-              min="2000-01-01"
-              max="2099-12-31"
-              aria-label="Start date"
-            >
-
-            <div
-                class="datetime-time"
-                data-time-control="requestStart"
-              >
-
-                <input
-                  id="requestStartHour"
-                  class="time-seg time-seg-hour"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time hour"
-                >
-
-                <span class="time-sep">:</span>
-
-                <input
-                  id="requestStartMinute"
-                  class="time-seg time-seg-minute"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time minute"
-                >
-
-                <input
-                  id="requestStartMeridiem"
-                  class="time-seg time-seg-meridiem"
-                  type="text"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time AM or PM"
-                >
-
-                <button
-                  id="requestStartWheel"
-                  class="time-wheel-button"
-                  type="button"
-                  tabindex="-1"
-                  aria-label="Choose start time from a list"
-                >
-                  <span aria-hidden="true">&#9662;</span>
-                </button>
-
-                <input
-                  id="requestStartTime"
-                  type="hidden"
-                >
-
-              </div>
-
-          </div>
-
-          <input
-            id="requestStart"
-            type="hidden"
-            data-recurrence-start
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <span>
-            Ends
-          </span>
-
-          <div class="datetime-field">
-
-            <input
-              id="requestEndDate"
-              type="date"
-              class="datetime-date"
-              min="2000-01-01"
-              max="2099-12-31"
-              aria-label="End date"
-            >
-
-            <div
-                class="datetime-time"
-                data-time-control="requestEnd"
-              >
-
-                <input
-                  id="requestEndHour"
-                  class="time-seg time-seg-hour"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time hour"
-                >
-
-                <span class="time-sep">:</span>
-
-                <input
-                  id="requestEndMinute"
-                  class="time-seg time-seg-minute"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time minute"
-                >
-
-                <input
-                  id="requestEndMeridiem"
-                  class="time-seg time-seg-meridiem"
-                  type="text"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time AM or PM"
-                >
-
-                <button
-                  id="requestEndWheel"
-                  class="time-wheel-button"
-                  type="button"
-                  tabindex="-1"
-                  aria-label="Choose end time from a list"
-                >
-                  <span aria-hidden="true">&#9662;</span>
-                </button>
-
-                <input
-                  id="requestEndTime"
-                  type="hidden"
-                >
-
-              </div>
-
-          </div>
-
-          <input
-            id="requestEnd"
-            type="hidden"
-          >
-
-        </div>
-
-      </div>
-
-
-
-      <!-- REPEAT AND FORMAT -->
-
-      <div class="two-col">
-
+      <!-- LOG IN -->
+      <form id="loginPanel" class="auth-panel" novalidate>
         <label class="field">
-
-          <span>
-            Repeat
-          </span>
-
-          <select
-            id="requestRepeatType"
-            data-repeat-type
-          >
-
-            <option value="NONE">
-              Does not repeat
-            </option>
-
-            <option value="WEEKLY">
-              Weekly
-            </option>
-
-          </select>
-
+          <span data-i18n="auth_email">Email</span>
+          <input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com" required>
         </label>
-
-
         <label class="field">
-
-          <span>
-            Format
-          </span>
-
-          <select
-            id="requestFormat"
-            class="placeholder-select"
-            required
-          >
-
-            <option
-              value=""
-              disabled
-              selected
-              hidden
-            >
-              Select One
-            </option>
-
-            <option value="ONLINE">
-              Online
-            </option>
-
-            <option value="IN_PERSON">
-              In-Person
-            </option>
-
-          </select>
-
+          <span data-i18n="auth_password">Password</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required>
         </label>
+        <label class="checkbox-row">
+          <input id="loginRemember" type="checkbox" checked>
+          <span data-i18n="auth_keep">Keep me signed in on this device</span>
+        </label>
+        <div id="loginError" class="form-error"></div>
+        <button id="loginSubmit" class="btn primary" type="submit" data-i18n="auth_login_btn">Log in</button>
+        <p class="auth-links">
+          <button type="button" id="forgotLink" data-i18n="auth_forgot">Forgot your password?</button>
+          <button type="button" id="toSignupLink" data-i18n="auth_create">Create an account</button>
+        </p>
+      </form>
 
+      <!-- SIGN UP -->
+      <form id="signupPanel" class="auth-panel hidden" novalidate>
+        <label class="field">
+          <span><span data-i18n="auth_name">Your name</span> <small data-i18n="auth_name_hint">shown on the calendar</small></span>
+          <input id="signupName" type="text" autocomplete="name" maxlength="40" placeholder="Ethan" required>
+        </label>
+        <label class="field">
+          <span><span data-i18n="auth_calname">Calendar name</span> <small data-i18n="auth_calname_hint">the title at the top of your calendar; you can change it later</small></span>
+          <input id="signupTitle" type="text" maxlength="80" placeholder="Ethan's Tutoring Availability">
+        </label>
+        <label class="field">
+          <span data-i18n="auth_email">Email</span>
+          <input id="signupEmail" type="email" autocomplete="username" placeholder="you@example.com" required>
+        </label>
+        <label class="field">
+          <span><span data-i18n="auth_password">Password</span> <small data-i18n="auth_pw_hint">8 characters or more</small></span>
+          <input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label class="checkbox-row hidden" id="claimRow">
+          <input id="claimMain" type="checkbox">
+          <span><span data-i18n="auth_claim">This site already has a calendar and it is mine</span> <small data-i18n="auth_claim_hint">take it over with the admin password</small></span>
+        </label>
+        <label class="field hidden" id="claimField">
+          <span data-i18n="auth_admin_pw">Admin password</span>
+          <input id="claimPassword" type="password" autocomplete="off">
+        </label>
+        <div id="signupError" class="form-error"></div>
+        <button id="signupSubmit" class="btn primary" type="submit" data-i18n="auth_signup_btn">Create my calendar</button>
+        <p class="auth-links">
+          <span></span>
+          <button type="button" id="toLoginLink" data-i18n="auth_have">I already have an account</button>
+        </p>
+      </form>
+
+      <!-- FORGOT -->
+      <form id="forgotPanel" class="auth-panel hidden" novalidate>
+        <h2 data-i18n="auth_forgot_title">Reset your password</h2>
+        <p data-i18n="auth_forgot_d">Enter your email and we will send a link to choose a new one.</p>
+        <label class="field">
+          <span data-i18n="auth_email">Email</span>
+          <input id="forgotEmail" type="email" autocomplete="username" required>
+        </label>
+        <div id="forgotError" class="form-error"></div>
+        <div id="forgotDone" class="auth-ok hidden"></div>
+        <button id="forgotSubmit" class="btn primary" type="submit" data-i18n="auth_send_link">Send the link</button>
+        <p class="auth-links">
+          <span></span>
+          <button type="button" id="forgotBackLink" data-i18n="auth_back">Back to log in</button>
+        </p>
+      </form>
+
+      <!-- RESET (from the email link) -->
+      <form id="resetPanel" class="auth-panel hidden" novalidate>
+        <h2 data-i18n="auth_reset_title">Choose a new password</h2>
+        <label class="field">
+          <span><span data-i18n="auth_new_pw">New password</span> <small data-i18n="auth_pw_hint">8 characters or more</small></span>
+          <input id="resetPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <div id="resetError" class="form-error"></div>
+        <button id="resetSubmit" class="btn primary" type="submit" data-i18n="auth_save_login">Save and log in</button>
+      </form>
+
+      <!-- VERIFYING (from the email link) -->
+      <div id="verifyPanel" class="auth-panel hidden">
+        <h2 id="verifyTitle" data-i18n="auth_verifying">Confirming your email…</h2>
+        <p id="verifyText" data-i18n="auth_moment">One moment.</p>
+        <div id="verifyError" class="form-error"></div>
+        <p class="auth-links hidden" id="verifyLinks">
+          <span></span>
+          <button type="button" id="verifyBackLink" data-i18n="auth_login_btn">Log in</button>
+        </p>
       </div>
 
-
-
-      <!-- RECURRENCE OPTIONS -->
-
-      <div
-        id="requestRecurrencePanel"
-        class="recurrence-panel hidden"
-      >
-
-        <div class="repeat-every-row">
-
-          <span>
-            Repeat every
-          </span>
-
-          <input
-            id="requestRepeatInterval"
-            type="number"
-            min="1"
-            max="52"
-            value="1"
-            data-repeat-interval
-          >
-
-          <span>
-            week(s)
-          </span>
-
+      <!-- AFTER SIGN-UP -->
+      <div id="welcomePanel" class="auth-panel hidden">
+        <h2 data-i18n="auth_ready">Your calendar is ready</h2>
+        <div class="auth-ok">
+          <span id="welcomeText"></span>
+          <br>
+          <a id="welcomeOpen" class="btn primary" href="/" data-i18n="auth_open">Open my calendar</a>
         </div>
-
-
-        <div class="recurrence-section">
-
-          <div class="recurrence-label">
-            Repeat on
-          </div>
-
-
-          <div
-            id="requestWeekdayPicker"
-            class="weekday-picker"
-          >
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="0"
-              title="Sunday"
-            >
-              S
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="1"
-              title="Monday"
-            >
-              M
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="2"
-              title="Tuesday"
-            >
-              T
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="3"
-              title="Wednesday"
-            >
-              W
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="4"
-              title="Thursday"
-            >
-              T
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="5"
-              title="Friday"
-            >
-              F
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="6"
-              title="Saturday"
-            >
-              S
-            </button>
-
-          </div>
-
-        </div>
-
-
-        <div class="recurrence-section">
-
-          <div class="recurrence-label">
-            Ends
-          </div>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="requestRepeatEndType"
-              value="NEVER"
-              data-repeat-end
-              checked
-            >
-
-            <span>
-              Never
-            </span>
-
-          </label>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="requestRepeatEndType"
-              value="ON"
-              data-repeat-end
-            >
-
-            <span>
-              On
-            </span>
-
-            <input
-              id="requestRepeatEndDate"
-              type="date"
-              data-repeat-end-date
-              disabled
-            >
-
-          </label>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="requestRepeatEndType"
-              value="COUNT"
-              data-repeat-end
-            >
-
-            <span>
-              After
-            </span>
-
-            <input
-              id="requestRepeatCount"
-              type="number"
-              min="1"
-              max="999"
-              value="10"
-              data-repeat-count
-              disabled
-            >
-
-            <span>
-              occurrences
-            </span>
-
-          </label>
-
-        </div>
-
-      </div>
-
-
-      <!-- SUBJECT -->
-
-      <label class="field">
-
-        <span>
-          Subject
-        </span>
-
-        <input
-          id="requestSubject"
-          type="text"
-          maxlength="80"
-          required
-          placeholder="e.g. AP Physics C"
-        >
-
-      </label>
-
-
-
-      <!-- INLINE AVAILABILITY WARNING -->
-
-      <div
-        id="requestWarning"
-        class="conflict-warning hidden"
-      >
-
-        <div class="conflict-warning-header">
-
-          <div class="conflict-warning-icon">
-            !
-          </div>
-
-          <div>
-
-            <div
-              id="requestWarningTitle"
-              class="conflict-warning-title"
-            >
-              Outside available hours
-            </div>
-
-            <div
-              id="requestWarningSummary"
-              class="conflict-warning-summary"
-            ></div>
-
-          </div>
-
-        </div>
-
-
-        <div
-          id="requestWarningList"
-          class="conflict-warning-list"
-        ></div>
-
-
-        <div class="conflict-warning-footer">
-          You can still send this request. The tutor will confirm
-          whether the time works.
-        </div>
-
-      </div>
-
-
-
-      <!-- NORMAL VALIDATION ERROR -->
-
-      <div
-        id="requestError"
-        class="form-error"
-      ></div>
-
-
-
-      <!-- ACTION BUTTONS -->
-
-      <div class="modal-actions">
-
-        <button
-          class="btn secondary"
-          data-close="requestModal"
-        >
-          Cancel
-        </button>
-
-
-        <button
-          id="sendRequestAnywayBtn"
-          class="btn warning hidden"
-        >
-          Send Anyway
-        </button>
-
-
-        <button
-          id="sendRequestBtn"
-          class="btn primary"
-        >
-          Send request
-        </button>
-
+        <p class="auth-links">
+          <span id="welcomeStatus"></span>
+          <button type="button" id="welcomeResend" class="hidden" data-i18n="auth_resend">Send the email again</button>
+        </p>
       </div>
 
     </div>
-
   </div>
 
-
-
-  <!-- ADMIN LOGIN -->
-
-  <div
-    id="loginModal"
-    class="modal-backdrop hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="loginTitle"
-  >
-
-    <div class="modal-card small-modal">
-
-      <div class="modal-header">
-
-        <h2 id="loginTitle">
-          Admin access
-        </h2>
-
-        <button
-          class="close-btn"
-          data-close="loginModal"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <label class="field">
-
-        <span>
-          Password
-        </span>
-
-        <input
-          id="adminPasswordInput"
-          type="password"
-          autocomplete="current-password"
-          placeholder="Admin password"
-        >
-
-      </label>
-
-
-      <label class="checkbox-row">
-
-        <input
-          id="rememberMeInput"
-          type="checkbox"
-          checked
-        >
-
-        <span>
-          Keep me signed in on this device
-          <small>for 90 days, or until the admin password changes</small>
-        </span>
-
-      </label>
-
-
-      <div
-        id="loginError"
-        class="form-error"
-      ></div>
-
-
-      <div class="modal-actions">
-
-        <button
-          class="btn secondary"
-          data-close="loginModal"
-        >
-          Cancel
-        </button>
-
-        <button
-          id="loginSubmitBtn"
-          class="btn primary"
-        >
-          Enter admin mode
-        </button>
-
-      </div>
-
-    </div>
-
-  </div>
-
-
-
-  <!-- EVENT EDITOR -->
-
-  <div
-    id="eventModal"
-    class="modal-backdrop hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="eventModalTitle"
-  >
-
-    <div class="modal-card">
-
-      <div class="modal-header">
-
-        <h2 id="eventModalTitle">
-          Add time
-        </h2>
-
-        <button
-          class="close-btn"
-          data-close="eventModal"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <input
-        id="eventId"
-        type="hidden"
-      >
-
-
-      <!-- TYPE -->
-
-      <label class="field">
-
-        <span>
-          Type
-        </span>
-
-        <select
-          id="eventType"
-          class="placeholder-select"
-          required
-        >
-
-          <option
-            value=""
-            disabled
-            selected
-            hidden
-          >
-            Select One
-          </option>
-
-          <option value="AVAILABLE">
-            Available
-          </option>
-
-          <option value="BLOCKED">
-            Blocked / private event
-          </option>
-
-        </select>
-
-      </label>
-
-
-
-      <!-- START AND END -->
-
-      <div class="two-col">
-
-        <div class="field">
-
-          <span>
-            Starts
-          </span>
-
-          <div class="datetime-field">
-
-            <input
-              id="eventStartDate"
-              type="date"
-              class="datetime-date"
-              min="2000-01-01"
-              max="2099-12-31"
-              aria-label="Start date"
-            >
-
-            <div
-                class="datetime-time"
-                data-time-control="eventStart"
-              >
-
-                <input
-                  id="eventStartHour"
-                  class="time-seg time-seg-hour"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time hour"
-                >
-
-                <span class="time-sep">:</span>
-
-                <input
-                  id="eventStartMinute"
-                  class="time-seg time-seg-minute"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time minute"
-                >
-
-                <input
-                  id="eventStartMeridiem"
-                  class="time-seg time-seg-meridiem"
-                  type="text"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="Start time AM or PM"
-                >
-
-                <button
-                  id="eventStartWheel"
-                  class="time-wheel-button"
-                  type="button"
-                  tabindex="-1"
-                  aria-label="Choose start time from a list"
-                >
-                  <span aria-hidden="true">&#9662;</span>
-                </button>
-
-                <input
-                  id="eventStartTime"
-                  type="hidden"
-                >
-
-              </div>
-
-          </div>
-
-          <input
-            id="eventStart"
-            type="hidden"
-            data-recurrence-start
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <span>
-            Ends
-          </span>
-
-          <div class="datetime-field">
-
-            <input
-              id="eventEndDate"
-              type="date"
-              class="datetime-date"
-              min="2000-01-01"
-              max="2099-12-31"
-              aria-label="End date"
-            >
-
-            <div
-                class="datetime-time"
-                data-time-control="eventEnd"
-              >
-
-                <input
-                  id="eventEndHour"
-                  class="time-seg time-seg-hour"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time hour"
-                >
-
-                <span class="time-sep">:</span>
-
-                <input
-                  id="eventEndMinute"
-                  class="time-seg time-seg-minute"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time minute"
-                >
-
-                <input
-                  id="eventEndMeridiem"
-                  class="time-seg time-seg-meridiem"
-                  type="text"
-                  autocomplete="off"
-                  maxlength="2"
-                  placeholder="--"
-                  aria-label="End time AM or PM"
-                >
-
-                <button
-                  id="eventEndWheel"
-                  class="time-wheel-button"
-                  type="button"
-                  tabindex="-1"
-                  aria-label="Choose end time from a list"
-                >
-                  <span aria-hidden="true">&#9662;</span>
-                </button>
-
-                <input
-                  id="eventEndTime"
-                  type="hidden"
-                >
-
-              </div>
-
-          </div>
-
-          <input
-            id="eventEnd"
-            type="hidden"
-          >
-
-        </div>
-
-      </div>
-
-
-
-      <!-- REPEAT -->
-
-      <label class="field">
-
-        <span>
-          Repeat
-        </span>
-
-        <select
-          id="repeatType"
-          data-repeat-type
-        >
-
-          <option value="NONE">
-            Does not repeat
-          </option>
-
-          <option value="WEEKLY">
-            Weekly
-          </option>
-
-        </select>
-
-      </label>
-
-
-
-      <!-- RECURRENCE OPTIONS -->
-
-      <div
-        id="recurrencePanel"
-        class="recurrence-panel hidden"
-      >
-
-        <div class="repeat-every-row">
-
-          <span>
-            Repeat every
-          </span>
-
-          <input
-            id="repeatInterval"
-            type="number"
-            min="1"
-            max="52"
-            value="1"
-            data-repeat-interval
-          >
-
-          <span>
-            week(s)
-          </span>
-
-        </div>
-
-
-        <div class="recurrence-section">
-
-          <div class="recurrence-label">
-            Repeat on
-          </div>
-
-
-          <div
-            id="weekdayPicker"
-            class="weekday-picker"
-          >
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="0"
-              title="Sunday"
-            >
-              S
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="1"
-              title="Monday"
-            >
-              M
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="2"
-              title="Tuesday"
-            >
-              T
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="3"
-              title="Wednesday"
-            >
-              W
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="4"
-              title="Thursday"
-            >
-              T
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="5"
-              title="Friday"
-            >
-              F
-            </button>
-
-            <button
-              type="button"
-              class="weekday-btn"
-              data-day="6"
-              title="Saturday"
-            >
-              S
-            </button>
-
-          </div>
-
-        </div>
-
-
-        <div class="recurrence-section">
-
-          <div class="recurrence-label">
-            Ends
-          </div>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="repeatEndType"
-              value="NEVER"
-              data-repeat-end
-              checked
-            >
-
-            <span>
-              Never
-            </span>
-
-          </label>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="repeatEndType"
-              value="ON"
-              data-repeat-end
-            >
-
-            <span>
-              On
-            </span>
-
-            <input
-              id="repeatEndDate"
-              type="date"
-              data-repeat-end-date
-              disabled
-            >
-
-          </label>
-
-
-          <label class="recurrence-end-row">
-
-            <input
-              type="radio"
-              name="repeatEndType"
-              value="COUNT"
-              data-repeat-end
-            >
-
-            <span>
-              After
-            </span>
-
-            <input
-              id="repeatCount"
-              type="number"
-              min="1"
-              max="999"
-              value="10"
-              data-repeat-count
-              disabled
-            >
-
-            <span>
-              occurrences
-            </span>
-
-          </label>
-
-        </div>
-
-      </div>
-
-
-
-      <!-- TITLE -->
-
-      <label class="field">
-
-        <span>
-
-          Title
-
-          <small>
-            (admin only)
-          </small>
-
-        </span>
-
-        <input
-          id="eventTitle"
-          type="text"
-          maxlength="100"
-          required
-          placeholder="e.g. Jayden Tutoring, Class, Work"
-        >
-
-      </label>
-
-
-
-      <!-- COLOUR -->
-
-      <div class="field">
-
-        <span>
-
-          Color
-
-          <small>
-            (admin only — visitors always see red and green)
-          </small>
-
-        </span>
-
-        <div
-          id="eventColorRow"
-          class="color-row"
-          role="group"
-          aria-label="Color"
-        ></div>
-
-      </div>
-
-      <!-- NOTES -->
-
-      <label class="field">
-
-        <span>
-
-          Notes
-
-          <small>
-            (admin only)
-          </small>
-
-        </span>
-
-        <textarea
-          id="eventNotes"
-          rows="3"
-          maxlength="500"
-          placeholder="Optional"
-        ></textarea>
-
-      </label>
-
-
-
-      <!-- INLINE SCHEDULE CONFLICT -->
-
-      <div
-        id="conflictWarning"
-        class="conflict-warning hidden"
-      >
-
-        <div class="conflict-warning-header">
-
-          <div class="conflict-warning-icon">
-            !
-          </div>
-
-          <div>
-
-            <div class="conflict-warning-title">
-              Schedule conflict
-            </div>
-
-            <div
-              id="conflictWarningSummary"
-              class="conflict-warning-summary"
-            ></div>
-
-          </div>
-
-        </div>
-
-
-        <div
-          id="conflictWarningList"
-          class="conflict-warning-list"
-        ></div>
-
-
-        <div class="conflict-warning-footer">
-          You can still save this event if the overlap is intentional.
-        </div>
-
-      </div>
-
-
-
-      <!-- NORMAL VALIDATION ERROR -->
-
-      <div
-        id="eventError"
-        class="form-error"
-      ></div>
-
-
-
-      <!-- ACTION BUTTONS -->
-
-      <div class="modal-actions split">
-
-        <button
-          id="deleteEventBtn"
-          class="btn danger hidden"
-        >
-          Delete
-        </button>
-
-
-        <div class="right-actions">
-
-          <button
-            class="btn secondary"
-            data-close="eventModal"
-          >
-            Cancel
-          </button>
-
-
-          <button
-            id="saveAnywayBtn"
-            class="btn warning hidden"
-          >
-            Save Anyway
-          </button>
-
-
-          <button
-            id="saveEventBtn"
-            class="btn primary"
-          >
-            Save
-          </button>
-
-        </div>
-
-      </div>
-
-    </div>
-
-  </div>
-
-
-
-  <!-- SESSION REQUEST REVIEW (ADMIN) -->
-
-  <div
-    id="requestDrawerBackdrop"
-    class="drawer-backdrop hidden"
-  >
-
-    <aside class="blocked-drawer">
-
-      <div class="blocked-drawer-header">
-
-        <div>
-
-          <h2>
-            Session Requests
-          </h2>
-
-          <div class="blocked-drawer-subtitle">
-            Submitted by students, waiting on you
-          </div>
-
-        </div>
-
-        <button
-          id="closeRequestDrawerBtn"
-          class="close-btn"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <div
-        id="requestListStatus"
-        class="status"
-      ></div>
-
-
-      <div
-        id="requestList"
-        class="blocked-session-list"
-      ></div>
-
-    </aside>
-
-  </div>
-
-
-
-  <!-- BLOCKED SESSION ADMIN PANEL -->
-
-  <!-- HISTORY DRAWER (ADMIN) -->
-
-  <div
-    id="historyDrawerBackdrop"
-    class="drawer-backdrop hidden"
-  >
-
-    <aside
-      id="historyDrawer"
-      class="blocked-drawer history-drawer"
-    >
-
-      <div class="blocked-drawer-header">
-
-        <div>
-
-          <h2>
-            Version history
-          </h2>
-
-          <div class="blocked-drawer-subtitle">
-            The schedule at every save, newest first. Restore any version to make it the current one again; what came after stays in the list.
-          </div>
-
-        </div>
-
-        <button
-          id="closeHistoryDrawerBtn"
-          class="close-btn"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <div
-        id="historyStatus"
-        class="status"
-      ></div>
-
-
-      <div
-        id="historyList"
-        class="history-list"
-      ></div>
-
-
-    </aside>
-
-  </div>
-
-
-  <div
-    id="blockedDrawerBackdrop"
-    class="drawer-backdrop hidden"
-  >
-
-    <aside
-      id="blockedDrawer"
-      class="blocked-drawer"
-    >
-
-      <div class="blocked-drawer-header">
-
-        <div>
-
-          <h2>
-            Blocked Sessions
-          </h2>
-
-          <div class="blocked-drawer-subtitle">
-            Past and upcoming blocked events
-          </div>
-
-        </div>
-
-        <button
-          id="closeBlockedDrawerBtn"
-          class="close-btn"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <div
-        id="blockedListStatus"
-        class="status"
-      ></div>
-
-
-      <div class="blocked-list-columns">
-
-
-        <!-- PAST -->
-
-        <section class="blocked-list-column">
-
-          <div class="blocked-list-heading">
-
-            <div>
-
-              <h3>
-                Past
-              </h3>
-
-              <span>
-                Most recent first
-              </span>
-
-            </div>
-
-            <span
-              id="pastBlockedCount"
-              class="blocked-count"
-            >
-              0
-            </span>
-
-          </div>
-
-          <div
-            id="pastBlockedList"
-            class="blocked-session-list"
-          ></div>
-
-        </section>
-
-
-
-        <!-- UPCOMING -->
-
-        <section class="blocked-list-column">
-
-          <div class="blocked-list-heading">
-
-            <div>
-
-              <h3>
-                Upcoming
-              </h3>
-
-              <span id="upcomingBlockedRange">
-                Soonest first
-              </span>
-
-            </div>
-
-            <span
-              id="upcomingBlockedCount"
-              class="blocked-count"
-            >
-              0
-            </span>
-
-          </div>
-
-          <div
-            id="upcomingBlockedList"
-            class="blocked-session-list"
-          ></div>
-
-        </section>
-
-      </div>
-
-    </aside>
-
-  </div>
-
-
-  <script
-    src="/app.js"
-    defer
-  ></script>
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script>
+    (function () {
+
+      var $ = function (id) { return document.getElementById(id); };
+      var t = function (key, vars) { return window.I18N.t(key, vars); };
+      var params = new URLSearchParams(window.location.search);
+      var site = { name: 'MyOpenings', claimed: true, mail: true, mainSlug: null };
+
+      /* ---------- theme, the same as on the calendar ---------- */
+
+      function isDark() {
+        var chosen = document.documentElement.getAttribute('data-theme');
+        return chosen ? chosen === 'dark' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+      function renderThemeButton() {
+        $('themeIcon').textContent = isDark() ? '☀' : '☾';
+      }
+      $('themeBtn').addEventListener('click', function () {
+        var next = isDark() ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('theme', next); } catch (e) {}
+        renderThemeButton();
+      });
+      renderThemeButton();
+
+      /* ---------- language ---------- */
+
+      Object.keys(window.I18N.LANGUAGES).forEach(function (code) {
+        var option = document.createElement('option');
+        option.value = code;
+        option.textContent = window.I18N.LANGUAGES[code];
+        $('langSelect').appendChild(option);
+      });
+      function applyLanguage() {
+        window.I18N.apply();
+        $('langSelect').value = window.I18N.get();
+        $('langSelect').title = t('language');
+        $('step2Text').textContent = t('home_step2_d', { host: window.location.host });
+        $('footNote').textContent = site.claimed || !site.mainSlug ? '' : t('home_looking', { slug: site.mainSlug });
+        document.title = site.name;
+      }
+      $('langSelect').addEventListener('change', function () {
+        window.I18N.set($('langSelect').value);
+        applyLanguage();
+      });
+      window.I18N.set(window.I18N.detect('en'), false);
+      applyLanguage();
+
+      /* ---------- motion ---------- */
+
+      var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      /*
+        The "made for" row is repeated (six times, an even number, so
+        the glide of half its width lands on an identical row) so it
+        can glide without a gap on any screen; the copies carry the
+        same data-i18n keys, so a language change reaches them too.
+      */
+      var chips = $('homeChips');
+      var set = Array.prototype.slice.call(chips.children);
+      for (var rep = 1; rep < 6; rep += 1) {
+        set.forEach(function (chip) {
+          var copy = chip.cloneNode(true);
+          copy.setAttribute('aria-hidden', 'true');
+          chips.appendChild(copy);
+        });
+      }
+      window.I18N.apply();
+
+      /* each part of the page rises into place as it scrolls into view */
+      var revealed = document.querySelectorAll('.home h2, .home-step, .feature-item, .feature-stage, .stories-lede, .stories-card, .story-pill, .home-marquee, .home-faq details, .home-ready p, #readySignupBtn');
+      Array.prototype.forEach.call(revealed, function (el) {
+        var index = Array.prototype.indexOf.call(el.parentNode.children, el);
+        el.classList.add('reveal');
+        el.style.setProperty('--d', Math.min(index, 8) * 70 + 'ms');
+      });
+      if (still || !('IntersectionObserver' in window)) {
+        Array.prototype.forEach.call(revealed, function (el) { el.classList.add('in'); });
+      } else {
+        var watcher = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('in');
+              watcher.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
+        Array.prototype.forEach.call(revealed, function (el) { watcher.observe(el); });
+      }
+
+      /*
+        The sample calendar plays a short loop: a slot opens, the
+        pointer finds "Request a session", a request arrives, the owner
+        accepts, and the slot is booked. Then it starts over.
+      */
+      var preview = $('homePreview');
+      if (!still) {
+        var step = 0;
+        var beats = [1600, 1800, 1600, 2600, 2600];
+        var tick = function () {
+          step = (step + 1) % 5;
+          preview.setAttribute('data-step', String(step));
+          window.setTimeout(tick, beats[step]);
+        };
+        window.setTimeout(tick, beats[0]);
+      }
+
+      /*
+        Everything included: one feature open at a time, its scene on
+        the stage beside it; the next opens on its own every few
+        seconds, and a click opens any of them at once.
+      */
+      var features = Array.prototype.slice.call(document.querySelectorAll('#featureList .feature-item'));
+      var stage = $('featureStage');
+      var featureTimer = null;
+      var BEAT = 5000;
+      function showFeature(index) {
+        features.forEach(function (item, i) {
+          var on = i === index;
+          item.classList.toggle('active', on);
+          item.querySelector('.feature-head').setAttribute('aria-expanded', on ? 'true' : 'false');
+          if (on) {
+            var bar = item.querySelector('.feature-progress');
+            bar.style.animation = 'none';
+            void bar.offsetWidth;
+            bar.style.animation = '';
+          }
+        });
+        stage.setAttribute('data-scene', String(index + 1));
+      }
+      function scheduleNext() {
+        if (still) return;
+        window.clearTimeout(featureTimer);
+        featureTimer = window.setTimeout(function () {
+          var current = features.findIndex(function (item) { return item.classList.contains('active'); });
+          showFeature((current + 1) % features.length);
+          scheduleNext();
+        }, BEAT);
+      }
+      features.forEach(function (item, i) {
+        item.style.setProperty('--beat', BEAT + 'ms');
+        item.querySelector('.feature-head').addEventListener('click', function () {
+          showFeature(i);
+          scheduleNext();
+        });
+      });
+      showFeature(0);
+      scheduleNext();
+
+      /*
+        The header casts a shadow once the page has scrolled, and a
+        line along its foot shows how far down the reader is.
+      */
+      var top = document.querySelector('.home-top');
+      var onScroll = function () {
+        top.classList.toggle('scrolled', window.scrollY > 8);
+        var room = document.documentElement.scrollHeight - window.innerHeight;
+        top.style.setProperty('--read', room > 0 ? Math.min(1, window.scrollY / room).toFixed(4) : 0);
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+
+      /* ---------- the dialog and its panels ---------- */
+
+      var PANELS = ['loginPanel', 'signupPanel', 'forgotPanel', 'resetPanel', 'verifyPanel', 'welcomePanel'];
+
+      function show(panel) {
+        PANELS.forEach(function (id) { $(id).classList.toggle('hidden', id !== panel); });
+        var tabbed = panel === 'loginPanel' || panel === 'signupPanel';
+        $('authTabs').style.visibility = tabbed ? 'visible' : 'hidden';
+        $('tabLogin').setAttribute('aria-selected', panel === 'loginPanel' ? 'true' : 'false');
+        $('tabSignup').setAttribute('aria-selected', panel === 'signupPanel' ? 'true' : 'false');
+        $('authModal').classList.remove('hidden');
+        var first = $(panel).querySelector('input');
+        if (first) setTimeout(function () { first.focus(); }, 30);
+      }
+
+      function closeDialog() {
+        $('authModal').classList.add('hidden');
+      }
+
+      $('tabLogin').addEventListener('click', function () { show('loginPanel'); });
+      $('tabSignup').addEventListener('click', function () { show('signupPanel'); });
+      $('topLoginBtn').addEventListener('click', function () { show('loginPanel'); });
+      $('heroLoginBtn').addEventListener('click', function () { show('loginPanel'); });
+      $('footLoginBtn').addEventListener('click', function () { show('loginPanel'); });
+      $('topSignupBtn').addEventListener('click', function () { show('signupPanel'); });
+      $('heroSignupBtn').addEventListener('click', function () { show('signupPanel'); });
+      $('readySignupBtn').addEventListener('click', function () { show('signupPanel'); });
+      $('toSignupLink').addEventListener('click', function () { show('signupPanel'); });
+      $('toLoginLink').addEventListener('click', function () { show('loginPanel'); });
+      $('forgotLink').addEventListener('click', function () { show('forgotPanel'); });
+      $('forgotBackLink').addEventListener('click', function () { show('loginPanel'); });
+      $('verifyBackLink').addEventListener('click', function () { show('loginPanel'); });
+      $('authClose').addEventListener('click', closeDialog);
+      $('authModal').addEventListener('click', function (event) {
+        if (event.target === $('authModal')) closeDialog();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeDialog();
+      });
+
+      /* ---------- the API ---------- */
+
+      function call(path, body, session) {
+        var headers = { 'Content-Type': 'application/json' };
+        if (session) headers['x-session'] = session.token;
+        return fetch('/api' + path, {
+          method: body === undefined ? 'GET' : 'POST',
+          headers: headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+          cache: 'no-store'
+        }).then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              var error = new Error(data.error || ('Request failed (' + response.status + ')'));
+              error.status = response.status;
+              throw error;
+            }
+            return data;
+          });
+        });
+      }
+
+      function busy(button, on) {
+        button.disabled = on;
+      }
+
+      /*
+        A session in hand: keep it, and go to the account's calendar.
+      */
+      function arrive(data, remember) {
+        window.CalendarSession.save({ token: data.token, expiresAt: data.expiresAt, slug: data.account.slug }, remember !== false);
+        window.location.href = '/' + data.account.slug;
+      }
+
+      /* ---------- log in ---------- */
+
+      $('loginPanel').addEventListener('submit', function (event) {
+        event.preventDefault();
+        $('loginError').textContent = '';
+        var email = $('loginEmail').value.trim();
+        var password = $('loginPassword').value;
+        if (!email || !password) { $('loginError').textContent = t('auth_need_both'); return; }
+        busy($('loginSubmit'), true);
+        call('/login', { email: email, password: password }).then(function (data) {
+          arrive(data, $('loginRemember').checked);
+        }).catch(function (error) {
+          $('loginError').textContent = error.message;
+          busy($('loginSubmit'), false);
+        });
+      });
+
+      /* ---------- sign up ---------- */
+
+      $('claimMain').addEventListener('change', function () {
+        $('claimField').classList.toggle('hidden', !$('claimMain').checked);
+        $('signupSubmit').textContent = t($('claimMain').checked ? 'auth_claim_btn' : 'auth_signup_btn');
+        $('signupTitle').closest('.field').classList.toggle('hidden', $('claimMain').checked);
+      });
+
+      $('signupPanel').addEventListener('submit', function (event) {
+        event.preventDefault();
+        $('signupError').textContent = '';
+        var body = {
+          displayName: $('signupName').value.trim(),
+          title: $('signupTitle').value.trim(),
+          email: $('signupEmail').value.trim(),
+          password: $('signupPassword').value
+        };
+        if (!body.displayName) { $('signupError').textContent = t('auth_need_name'); return; }
+        if (!body.email) { $('signupError').textContent = t('auth_need_email'); return; }
+        if (body.password.length < 8) { $('signupError').textContent = t('auth_need_pw'); return; }
+        if ($('claimMain').checked) {
+          body.adminPassword = $('claimPassword').value;
+          if (!body.adminPassword) { $('signupError').textContent = t('auth_need_admin'); return; }
+          delete body.title;
+        }
+        busy($('signupSubmit'), true);
+        call('/signup', body).then(function (data) {
+          var session = { token: data.token, expiresAt: data.expiresAt, slug: data.account.slug };
+          window.CalendarSession.save(session, true);
+          if (data.verification === 'off' || data.account.verified) {
+            window.location.href = data.account.master ? '/dashboard' : '/' + data.account.slug;
+            return;
+          }
+          currentSession = session;
+          $('welcomeText').innerHTML = t(data.verification === 'sent' ? 'auth_welcome_sent' : 'auth_welcome_failed', {
+            email: '<strong>' + escapeHtml(data.account.email) + '</strong>',
+            url: '<code>' + escapeHtml(data.account.url) + '</code>'
+          });
+          $('welcomeOpen').href = '/' + data.account.slug;
+          $('welcomeResend').classList.remove('hidden');
+          show('welcomePanel');
+        }).catch(function (error) {
+          $('signupError').textContent = error.message;
+        }).then(function () {
+          busy($('signupSubmit'), false);
+        });
+      });
+
+      var currentSession = null;
+      $('welcomeResend').addEventListener('click', function () {
+        $('welcomeStatus').textContent = t('auth_sending');
+        call('/resend', {}, currentSession).then(function (data) {
+          $('welcomeStatus').textContent = t(data.verification === 'sent' ? 'auth_sent' : data.verification === 'done' ? 'auth_already' : 'auth_not_sent');
+        }).catch(function (error) {
+          $('welcomeStatus').textContent = error.message;
+        });
+      });
+
+      /* ---------- forgot / reset ---------- */
+
+      $('forgotPanel').addEventListener('submit', function (event) {
+        event.preventDefault();
+        $('forgotError').textContent = '';
+        $('forgotDone').classList.add('hidden');
+        var email = $('forgotEmail').value.trim();
+        if (!email) { $('forgotError').textContent = t('auth_need_email'); return; }
+        busy($('forgotSubmit'), true);
+        call('/forgot', { email: email }).then(function (data) {
+          /*
+            The field stays: a typo can be corrected and the link
+            sent again.
+          */
+          $('forgotDone').textContent = data.message;
+          $('forgotDone').classList.remove('hidden');
+          $('forgotSubmit').textContent = t('auth_send_again');
+        }).catch(function (error) {
+          $('forgotError').textContent = error.message;
+        }).then(function () {
+          busy($('forgotSubmit'), false);
+        });
+      });
+
+      $('resetPanel').addEventListener('submit', function (event) {
+        event.preventDefault();
+        $('resetError').textContent = '';
+        var password = $('resetPassword').value;
+        if (password.length < 8) { $('resetError').textContent = t('auth_need_pw'); return; }
+        busy($('resetSubmit'), true);
+        call('/reset', { token: params.get('reset'), password: password }).then(function (data) {
+          arrive(data, true);
+        }).catch(function (error) {
+          $('resetError').textContent = error.message;
+          busy($('resetSubmit'), false);
+        });
+      });
+
+      /* ---------- verify ---------- */
+
+      function verify(token) {
+        show('verifyPanel');
+        call('/verify', { token: token }).then(function (data) {
+          $('verifyTitle').textContent = t('auth_verified');
+          $('verifyText').textContent = t('auth_verified_d');
+          window.CalendarSession.save({ token: data.token, expiresAt: data.expiresAt, slug: data.account.slug }, true);
+          setTimeout(function () { window.location.href = '/' + data.account.slug; }, 800);
+        }).catch(function (error) {
+          $('verifyTitle').textContent = t('auth_link_failed');
+          $('verifyText').textContent = '';
+          $('verifyError').textContent = error.message;
+          $('verifyLinks').classList.remove('hidden');
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+      }
+
+      /* ---------- start ---------- */
+
+      call('/site').then(function (data) {
+        site = data;
+        $('siteName').textContent = data.name;
+        $('footSite').textContent = data.name;
+        $('claimRow').classList.toggle('hidden', data.claimed);
+        /* the example calendar, when the owner has made one */
+        ['heroDemo', 'footDemo'].forEach(function (id) {
+          $(id).classList.toggle('hidden', !data.demo);
+          if (data.demo) $(id).href = '/' + data.demo;
+        });
+        applyLanguage();
+      }).catch(function () {});
+
+      if (params.has('verify')) {
+        verify(params.get('verify'));
+        return;
+      }
+      if (params.has('reset')) {
+        show('resetPanel');
+        return;
+      }
+      if (params.has('signup')) {
+        show('signupPanel');
+        return;
+      }
+      if (params.has('forgot')) {
+        show('forgotPanel');
+        return;
+      }
+      if (params.has('login')) {
+        show('loginPanel');
+        return;
+      }
+
+      /*
+        Already signed in: straight to the calendar. The session is
+        checked first, so a stale one lands here rather than in a loop.
+      */
+      var session = window.CalendarSession.read();
+      if (session) {
+        call('/me', undefined, session).then(function (data) {
+          /*
+            One calendar: straight to it. More than one, or the site's
+            owner: the dashboard that lists them.
+          */
+          var many = (data.calendars || []).length > 1 || data.account.master;
+          window.location.replace(many ? '/dashboard' : '/' + data.account.slug);
+        }).catch(function (error) {
+          if (error.status === 401) window.CalendarSession.clear();
+        });
+      }
+
+    })();
+  </script>
 
 </body>
+
 </html>

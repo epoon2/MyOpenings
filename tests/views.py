@@ -4,11 +4,12 @@ navigation, the heading, and the screenshot button's wording.
 
     python3 tests/views.py
 """
-import asyncio, subprocess, sys, time, urllib.request
+import asyncio, re, subprocess, sys, time, urllib.request
 from playwright.async_api import async_playwright
 
 PORT = 8949
 BASE = f"http://127.0.0.1:{PORT}"
+CAL = f"{BASE}/ethan"          # the first calendar, at its address
 oks, fails = [], []
 def check(name, cond, extra=""):
     (oks if cond else fails).append(name)
@@ -23,7 +24,7 @@ async def main():
         page.on("pageerror", lambda e: errs.append(str(e)))
         page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(CAL, wait_until="networkidle")
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
         tue = await page.evaluate("""async () => {
@@ -33,7 +34,7 @@ async def main():
                 return new Date(Date.UTC(y, m-1, d+n)).toISOString().slice(0,10); };
             await fetch('/api/events', { method: 'POST',
                 headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
-                body: JSON.stringify({ id: 'series-1', type: 'BLOCKED', title: 'Maya - Algebra II',
+                body: JSON.stringify({ type: 'BLOCKED', title: 'Maya - Algebra II',
                     start: shift(tue, -7) + 'T16:00', end: shift(tue, -7) + 'T17:00',
                     recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [2, 4],
                                   endType: 'NEVER' } }) });
@@ -44,9 +45,9 @@ async def main():
         await page.wait_for_timeout(800)
 
         # ---- default week view
-        label = await page.text_content("#saveWeekBtn")
-        check("week is the default with its screenshot wording",
-              label.strip() == "Screenshot weekly schedule", label)
+        label = await page.get_attribute("#saveWeekBtn", "title")
+        check("week is the default; the download icon's tooltip says so",
+              label == "Download the weekly schedule as an image" and await page.evaluate("!!document.querySelector('#saveWeekBtn svg')"), label)
         cols = await page.locator(".day-column").count()
         check("week view shows seven columns", cols == 7, f"cols={cols}")
 
@@ -54,8 +55,8 @@ async def main():
         await page.click("#viewDayBtn"); await page.wait_for_timeout(700)
         cols = await page.locator(".day-column").count()
         check("day view shows one wide column", cols == 1, f"cols={cols}")
-        label = await page.text_content("#saveWeekBtn")
-        check("the button says daily now", label.strip() == "Screenshot daily schedule", label)
+        label = await page.get_attribute("#saveWeekBtn", "title")
+        check("the tooltip says daily now", label == "Download the daily schedule as an image", label)
         heading = await page.text_content("#weekLabel")
         expected = await page.evaluate(
             "new Date().toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric', year:'numeric'})")
@@ -73,7 +74,11 @@ async def main():
         await page.wait_for_timeout(800)
         cards = await page.locator(".event-card").count()
         check("stepping day by day reaches the session", cards == 1, f"cards={cards}")
-        await page.locator(".event-card").first.click(button="right")
+        # scroll first and let the scroll event pass - the menu closes on scroll
+        await page.evaluate("document.querySelector('.event-card').scrollIntoView({ block: 'center' })")
+        await page.wait_for_timeout(300)
+        await page.evaluate("""() => { const card = document.querySelector('.event-card');
+            card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 400, clientY: 400 })); }""")
         await page.wait_for_timeout(300)
         items = await page.evaluate(
             "[...document.querySelectorAll('.context-menu-item')].map(i => i.textContent.trim())")
@@ -84,8 +89,9 @@ async def main():
         async with page.expect_download() as dl_info:
             await page.click("#saveWeekBtn")
         dl = await dl_info.value
-        check("the daily screenshot is named for the view",
-              dl.suggested_filename.startswith("scheduledaily"), dl.suggested_filename)
+        today = await page.evaluate("(() => { const d = new Date(document.querySelector('.day-column').dataset.date + 'T12:00'); return (d.getMonth() + 1) + '.' + d.getDate(); })()")
+        check("the daily download is named calendar + day, e.g. ethans_tutoring_availability 9.15.png",
+              dl.suggested_filename == f"ethans_tutoring_availability {today}.png", dl.suggested_filename)
 
         # ---- month view
         await page.click("#viewMonthBtn"); await page.wait_for_timeout(800)
@@ -98,8 +104,8 @@ async def main():
         check("month view lays out the full grid", counts["dows"] == 7 and counts["cells"] == 42, str(counts))
         check("the month carries the series as chips", counts["chips"] >= 6, str(counts))
         check("the weekly summary sits out of month view", counts["summaryHidden"], str(counts))
-        label = await page.text_content("#saveWeekBtn")
-        check("the button says monthly now", label.strip() == "Screenshot monthly schedule", label)
+        label = await page.get_attribute("#saveWeekBtn", "title")
+        check("the tooltip says monthly now", label == "Download the monthly schedule as an image", label)
         heading = await page.text_content("#weekLabel")
         check("the heading names the month", any(ch.isdigit() for ch in heading) and "–" not in heading, heading)
 
@@ -109,7 +115,7 @@ async def main():
         dl = await dl_info.value
         data = open(await dl.path(), "rb").read()
         check("the monthly screenshot is a real PNG named for the view",
-              dl.suggested_filename.startswith("schedulemonthly") and data[:8] == b"\x89PNG\r\n\x1a\n"
+              re.fullmatch(r"ethans_tutoring_availability \d{1,2}\.\d{4}\.png", dl.suggested_filename) and data[:8] == b"\x89PNG\r\n\x1a\n"
               and len(data) > 20000, dl.suggested_filename + f" {len(data)}b")
 
         # ---- month nav steps by month, and a cell click opens the day

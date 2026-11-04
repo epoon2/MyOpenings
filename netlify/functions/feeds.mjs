@@ -15,6 +15,8 @@
 
 import crypto from "node:crypto";
 
+import { zonedLocalToUtc } from "./googlesync.mjs";
+
 const TIMEZONE_ID = "America/Los_Angeles";
 const PRODID = "-//Tutoring Availability//Feed//EN";
 const UID_DOMAIN = "tutoring-availability";
@@ -66,8 +68,14 @@ export function feedSessions(expanded) {
 }
 
 
-export function buildIcs(expanded, { calendarName = "Tutoring", generatedAt = new Date() } = {}) {
+/*
+  Los Angeles times ride with the VTIMEZONE below, as they always have.
+  Any other zone (a setting the admin can change) is written in UTC,
+  which every calendar reads without a timezone definition.
+*/
+export function buildIcs(expanded, { calendarName = "Tutoring", generatedAt = new Date(), timeZone = TIMEZONE_ID } = {}) {
   const stamp = icsUtcStamp(generatedAt);
+  const local = timeZone === TIMEZONE_ID;
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -75,17 +83,20 @@ export function buildIcs(expanded, { calendarName = "Tutoring", generatedAt = ne
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsText(calendarName)}`,
-    `X-WR-TIMEZONE:${TIMEZONE_ID}`,
-    ...LOS_ANGELES_VTIMEZONE
+    `X-WR-TIMEZONE:${timeZone}`,
+    ...(local ? LOS_ANGELES_VTIMEZONE : [])
   ];
+  const when = (value) => local
+    ? `;TZID=${TIMEZONE_ID}:${icsLocal(value)}`
+    : `:${icsUtcStamp(zonedLocalToUtc(value, timeZone))}`;
 
   for (const session of feedSessions(expanded)) {
     lines.push(
       "BEGIN:VEVENT",
       `UID:${session.id}@${UID_DOMAIN}`,
       `DTSTAMP:${stamp}`,
-      `DTSTART;TZID=${TIMEZONE_ID}:${icsLocal(session.start)}`,
-      `DTEND;TZID=${TIMEZONE_ID}:${icsLocal(session.end)}`,
+      `DTSTART${when(session.start)}`,
+      `DTEND${when(session.end)}`,
       "SUMMARY:Tutoring",
       "END:VEVENT"
     );

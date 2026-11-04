@@ -2,8 +2,9 @@
   Google Calendar mirror.
 
   Every booked session on the schedule is kept as a matching event on
-  one Google calendar, titled "Tutoring" and nothing more - no student
-  name, no notes. Availability is never mirrored.
+  one Google calendar, titled "Blocked" unless the owner typed a name
+  for it in the editor (googleTitle) - never the student's name or the
+  notes by default. Availability is never mirrored.
 
   Setup is two environment variables on Netlify:
 
@@ -39,7 +40,7 @@ const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
   CONFIG
 */
 
-export function googleSyncSettings(env = process.env) {
+export function googleSyncSettings(env = process.env, { timeZone = TIMEZONE_ID } = {}) {
   const raw = env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const calendarId = env.GOOGLE_CALENDAR_ID;
   if (!raw || !calendarId) return null;
@@ -49,6 +50,7 @@ export function googleSyncSettings(env = process.env) {
   return {
     account,
     calendarId,
+    timeZone,
     apiBase: env.GOOGLE_API_BASE || DEFAULT_API_BASE,
     tokenUrl: env.GOOGLE_TOKEN_URL || DEFAULT_TOKEN_URL
   };
@@ -73,12 +75,12 @@ export function googleEventId(portalId) {
 }
 
 
-export function buildGoogleEvent(event) {
+export function buildGoogleEvent(event, timeZone = TIMEZONE_ID) {
   const body = {
-    summary: "Tutoring",
+    summary: String(event.googleTitle || "").trim() || "Blocked",
     status: "confirmed",
-    start: { dateTime: `${event.start}:00`, timeZone: TIMEZONE_ID },
-    end: { dateTime: `${event.end}:00`, timeZone: TIMEZONE_ID },
+    start: { dateTime: `${event.start}:00`, timeZone },
+    end: { dateTime: `${event.end}:00`, timeZone },
     extendedProperties: {
       private: { tutoringId: String(event.id), tutoringSource: SOURCE_TAG }
     }
@@ -111,14 +113,14 @@ export function buildGoogleEvent(event) {
       `BYDAY=${[...recurrence.weekdays].sort((a, b) => a - b).map((d) => WEEKDAY_CODES[d]).join(",")}`
     ];
     if (recurrence.endType === "COUNT") parts.push(`COUNT=${recurrence.count}`);
-    if (recurrence.endType === "ON") parts.push(`UNTIL=${rruleUntil(recurrence.until)}`);
+    if (recurrence.endType === "ON") parts.push(`UNTIL=${rruleUntil(recurrence.until, timeZone)}`);
     body.recurrence = [`RRULE:${parts.join(";")}`];
 
     const time = event.start.slice(11);
     const exdates = [...new Set(recurrence.exdates || [])].sort();
     if (exdates.length) {
       body.recurrence.push(
-        `EXDATE;TZID=${TIMEZONE_ID}:` +
+        `EXDATE;TZID=${timeZone}:` +
         exdates.map((date) => icsLocal(`${date}T${time}`)).join(",")
       );
     }
@@ -213,8 +215,8 @@ export function firstOccurrence(event) {
   so UNTIL is the last minute of that day in Los Angeles.
 */
 
-export function rruleUntil(untilDate) {
-  const utc = new Date(zonedLocalToUtc(`${untilDate}T23:59`, TIMEZONE_ID).getTime() + 59000);
+export function rruleUntil(untilDate, timeZone = TIMEZONE_ID) {
+  const utc = new Date(zonedLocalToUtc(`${untilDate}T23:59`, timeZone).getTime() + 59000);
   return utc.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
@@ -313,7 +315,7 @@ function calendarPath(settings, suffix = "") {
 
 export async function upsertGoogleEvent(event, settings) {
   const id = googleEventId(event.id);
-  const body = { ...buildGoogleEvent(event), id };
+  const body = { ...buildGoogleEvent(event, settings.timeZone || TIMEZONE_ID), id };
   let response = await googleRequest(settings, "PUT", calendarPath(settings, `/${id}`), body);
   if (response.status === 404) {
     response = await googleRequest(settings, "POST", calendarPath(settings), body);
@@ -342,8 +344,8 @@ export async function deleteGoogleEvent(portalId, settings) {
   throws: the schedule has already been saved by the time these run.
 */
 
-export async function mirrorSavedEvent(event, env = process.env) {
-  const settings = googleSyncSettings(env);
+export async function mirrorSavedEvent(event, env = process.env, options = {}) {
+  const settings = googleSyncSettings(env, options);
   if (!settings) return { google: "off" };
   try {
     if (event.type === "BLOCKED") {
@@ -379,8 +381,8 @@ export async function mirrorDeletedEvent(portalId, env = process.env) {
   availability is removed too.
 */
 
-export async function mirrorDifference(before, after, env = process.env) {
-  const settings = googleSyncSettings(env);
+export async function mirrorDifference(before, after, env = process.env, options = {}) {
+  const settings = googleSyncSettings(env, options);
   if (!settings) return { google: "off" };
   const was = new Map(before.map((event) => [event.id, event]));
   const now = new Map(after.map((event) => [event.id, event]));
@@ -424,8 +426,8 @@ export async function mirrorDifference(before, after, env = process.env) {
   behind it removed. Used on first setup and after an outage.
 */
 
-export async function resyncAll(events, env = process.env) {
-  const settings = googleSyncSettings(env);
+export async function resyncAll(events, env = process.env, options = {}) {
+  const settings = googleSyncSettings(env, options);
   if (!settings) return { google: "off" };
   const blocked = events.filter((event) => event.type === "BLOCKED");
   const result = { google: "ok", pushed: 0, removed: 0, failed: [] };

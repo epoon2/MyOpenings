@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>My calendars</title>
+  <link rel="icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script>
+    try {
+      var savedTheme = localStorage.getItem( 'theme' );
+      if ( savedTheme === 'dark' || savedTheme === 'light' ) {
+        document.documentElement.setAttribute( 'data-theme', savedTheme );
+      }
+    } catch ( e ) {}
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /*
+      THE DASHBOARD
+
+      An account's calendars, one card each, and a way to make more.
+      The master sees every account below, with its calendars.
+    */
+    .dash-top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .dash-top-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 12px 24px;
+    }
+
+    .dash-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 750;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .dash-brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+    }
+
+    .dash-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dash {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 24px 60px;
+    }
+
+    .dash h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+      letter-spacing: -0.01em;
+    }
+
+    .dash h2 {
+      margin: 40px 0 12px;
+      font-size: 22px;
+    }
+
+    .dash .lede {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .cal-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .cal-card-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .cal-card-dot {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      margin-top: 4px;
+      border-radius: 50%;
+    }
+
+    .cal-card strong {
+      font-size: 16px;
+      line-height: 1.3;
+    }
+
+    .cal-card .cal-addr {
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    .cal-card .cal-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .cal-card .cal-meta span {
+      padding: 3px 8px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      color: var(--muted);
+    }
+
+    .cal-card .cal-meta span.ok {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .cal-card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 6px;
+    }
+
+    .cal-card-actions .btn {
+      text-decoration: none;
+    }
+
+    .cal-card-actions .danger-link {
+      margin-left: auto;
+      padding: 8px 6px;
+      background: none;
+      border: 0;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .cal-card-actions .danger-link:hover {
+      color: var(--danger-text, #b42318);
+    }
+
+    .new-cal {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-end;
+      margin-top: 18px;
+      padding: 16px;
+      background: var(--card);
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+    }
+
+    .new-cal .field {
+      flex: 1;
+      min-width: 220px;
+      margin: 0;
+    }
+
+    .form-error {
+      min-height: 0;
+    }
+
+    .accounts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .accounts-table th,
+    .accounts-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .accounts-table th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .accounts-table .acct-cals a {
+      display: inline-block;
+      margin: 0 8px 4px 0;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .accounts-table .acct-cals a:hover {
+      text-decoration: underline;
+    }
+
+    .accounts-table .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .accounts-table .tag.ok {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .accounts-table .tag.master {
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+
+    @media (max-width: 640px) {
+      .accounts-table thead {
+        display: none;
+      }
+
+      .accounts-table tr {
+        display: block;
+        padding: 8px 0;
+      }
+
+      .accounts-table td {
+        display: block;
+        padding: 3px 0;
+        border: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="dash-top">
+    <div class="dash-top-inner">
+      <a class="dash-brand" href="/">
+        <img src="/icon-192.png" alt="">
+        <span id="siteName">MyOpenings</span>
+      </a>
+      <div class="dash-top-actions">
+        <span id="signedAs" class="muted" style="font-size:13px;color:var(--muted)"></span>
+        <select id="langSelect" class="lang-select" aria-label="Language" title="Language"></select>
+        <button id="themeBtn" class="icon-btn theme-btn" type="button" data-i18n-title="theme" title="Switch between light and dark" aria-label="Switch between light and dark">
+          <span id="themeIcon" aria-hidden="true">☾</span>
+        </button>
+        <button id="signOutBtn" class="btn secondary" type="button" data-i18n="sign_out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="dash">
+
+    <h1 data-i18n="dash_title">My calendars</h1>
+    <p class="lede" data-i18n="dash_intro"></p>
+
+    <div id="calGrid" class="cal-grid"></div>
+
+    <form id="newCalForm" class="new-cal" novalidate>
+      <label class="field">
+        <span data-i18n="dash_name">Calendar name</span>
+        <input id="newCalName" type="text" maxlength="80" placeholder="Piano lessons">
+      </label>
+      <button id="newCalBtn" class="btn primary" type="submit" data-i18n="dash_create">Create</button>
+      <div id="newCalError" class="form-error" style="flex-basis:100%"></div>
+    </form>
+
+    <section id="accounts" class="hidden">
+      <h2 data-i18n="dash_accounts">All accounts</h2>
+      <p class="lede" data-i18n="dash_accounts_d"></p>
+      <table class="accounts-table">
+        <thead>
+          <tr>
+            <th data-i18n="auth_name">Your name</th>
+            <th data-i18n="auth_email">Email</th>
+            <th></th>
+            <th data-i18n="calendars_btn">Calendars</th>
+          </tr>
+        </thead>
+        <tbody id="accountsBody"></tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script>
+    (function () {
+
+      var $ = function (id) { return document.getElementById(id); };
+      var t = function (key, vars) { return window.I18N.t(key, vars); };
+      var session = window.CalendarSession.read();
+      var account = null;
+      var calendars = [];
+
+      if (!session) {
+        window.location.replace('/?login');
+        return;
+      }
+
+      /* ---------- theme and language ---------- */
+
+      function isDark() {
+        var chosen = document.documentElement.getAttribute('data-theme');
+        return chosen ? chosen === 'dark' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+      $('themeIcon').textContent = isDark() ? '☀' : '☾';
+      $('themeBtn').addEventListener('click', function () {
+        var next = isDark() ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('theme', next); } catch (e) {}
+        $('themeIcon').textContent = isDark() ? '☀' : '☾';
+      });
+      Object.keys(window.I18N.LANGUAGES).forEach(function (code) {
+        var option = document.createElement('option');
+        option.value = code;
+        option.textContent = window.I18N.LANGUAGES[code];
+        $('langSelect').appendChild(option);
+      });
+      function applyLanguage() {
+        window.I18N.apply();
+        $('langSelect').value = window.I18N.get();
+        $('langSelect').title = t('language');
+        document.title = t('dash_title');
+        if (account) $('signedAs').textContent = t('dash_signed_as', { name: account.displayName });
+        render();
+      }
+      $('langSelect').addEventListener('change', function () {
+        window.I18N.set($('langSelect').value);
+        applyLanguage();
+      });
+      window.I18N.set(window.I18N.detect('en'), false);
+
+      /* ---------- the API ---------- */
+
+      function call(method, path, body) {
+        return fetch('/api' + path, {
+          method: method,
+          headers: { 'Content-Type': 'application/json', 'x-session': session.token },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          cache: 'no-store'
+        }).then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              var error = new Error(data.error || ('Request failed (' + response.status + ')'));
+              error.status = response.status;
+              throw error;
+            }
+            return data;
+          });
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+      }
+
+      /* ---------- my calendars ---------- */
+
+      function render() {
+        var grid = $('calGrid');
+        grid.innerHTML = '';
+        if (!calendars.length) {
+          var empty = document.createElement('p');
+          empty.className = 'lede';
+          empty.textContent = t('dash_none');
+          grid.appendChild(empty);
+        }
+        calendars.forEach(function (calendar) {
+          var card = document.createElement('div');
+          card.className = 'cal-card';
+          card.dataset.slug = calendar.slug;
+          card.innerHTML =
+            '<div class="cal-card-head"><span class="cal-card-dot" style="background:' + escapeHtml((calendar.colors && calendar.colors.blocked) || '#b42318') + '"></span>' +
+            '<div><strong>' + escapeHtml(calendar.title) + '</strong><div class="cal-addr">' + escapeHtml(window.location.host + '/' + calendar.slug) + '</div></div></div>' +
+            '<div class="cal-meta">' +
+              (calendar.primary ? '<span>' + t('dash_primary') + '</span>' : '') +
+              (calendar.live ? '<span class="ok">' + t('dash_public') + '</span>' : '<span>' + t('dash_private') + '</span>') +
+            '</div>' +
+            '<div class="cal-card-actions"><a class="btn primary small" href="/' + escapeHtml(calendar.slug) + '">' + t('open') + '</a>' +
+              (calendar.primary || calendars.length < 2 ? '' : '<button type="button" class="danger-link">' + t('dash_delete') + '</button>') +
+            '</div>';
+          var remove = card.querySelector('.danger-link');
+          if (remove) {
+            remove.addEventListener('click', function () {
+              if (!window.confirm(t('dash_delete_confirm', { title: calendar.title }))) return;
+              remove.disabled = true;
+              call('DELETE', '/calendars/' + encodeURIComponent(calendar.slug)).then(function (data) {
+                calendars = data.calendars || [];
+                render();
+              }).catch(function (error) {
+                remove.disabled = false;
+                window.alert(error.message);
+              });
+            });
+          }
+          grid.appendChild(card);
+        });
+      }
+
+      $('newCalForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        $('newCalError').textContent = '';
+        var title = $('newCalName').value.trim();
+        if (!title) { $('newCalError').textContent = t('auth_need_name'); return; }
+        $('newCalBtn').disabled = true;
+        call('POST', '/calendars', { title: title }).then(function (data) {
+          calendars = data.calendars || [];
+          $('newCalName').value = '';
+          render();
+        }).catch(function (error) {
+          $('newCalError').textContent = error.message;
+        }).then(function () {
+          $('newCalBtn').disabled = false;
+        });
+      });
+
+      $('signOutBtn').addEventListener('click', function () {
+        window.CalendarSession.clear();
+        window.location.href = '/';
+      });
+
+      /* ---------- every account, for the master ---------- */
+
+      function renderAccounts(accounts) {
+        var body = $('accountsBody');
+        body.innerHTML = '';
+        accounts.forEach(function (item) {
+          var row = document.createElement('tr');
+          var since = item.createdAt ? new Date(item.createdAt).toLocaleDateString(window.I18N.locale(), { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+          row.innerHTML =
+            '<td><strong>' + escapeHtml(item.displayName) + '</strong>' + (item.master ? ' <span class="tag master">' + t('dash_master') + '</span>' : '') + '</td>' +
+            '<td>' + escapeHtml(item.email) + '<br><span class="tag ' + (item.verified ? 'ok' : '') + '">' + t(item.verified ? 'dash_verified' : 'dash_unverified') + '</span></td>' +
+            '<td style="color:var(--muted);font-size:12px">' + (since ? escapeHtml(t('dash_since', { date: since })) : '') + '</td>' +
+            '<td class="acct-cals">' + item.calendars.map(function (calendar) {
+              return '<a href="/' + escapeHtml(calendar.slug) + '">' + escapeHtml(calendar.title) + '</a>';
+            }).join('') + '</td>';
+          body.appendChild(row);
+        });
+        $('accounts').classList.remove('hidden');
+      }
+
+      /* ---------- start ---------- */
+
+      call('GET', '/site').then(function (data) {
+        $('siteName').textContent = data.name;
+      }).catch(function () {});
+
+      call('GET', '/me').then(function (data) {
+        account = data.account;
+        calendars = data.calendars || [];
+        applyLanguage();
+        if (account.master) {
+          call('GET', '/admin/accounts').then(function (list) {
+            renderAccounts(list.accounts || []);
+            if (window.location.hash === '#accounts') $('accounts').scrollIntoView();
+          }).catch(function () {});
+        }
+      }).catch(function (error) {
+        if (error.status === 401) {
+          window.CalendarSession.clear();
+          window.location.replace('/?login');
+        }
+      });
+
+    })();
+  </script>
+
+</body>
+
+</html>
