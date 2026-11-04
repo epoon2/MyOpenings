@@ -53,7 +53,12 @@ async def main():
         check("a new calendar is made from its name", cards == ["maya-chen", "piano-lessons"], str(cards))
         check("the main calendar cannot be deleted from here, the new one can", await page.evaluate("!document.querySelector('.cal-card[data-slug=\"maya-chen\"] .danger-link') && !!document.querySelector('.cal-card[data-slug=\"piano-lessons\"] .danger-link')"))
         await page.goto(BASE + "/", wait_until="networkidle"); await page.wait_for_timeout(800)
-        check("the home page now sends her to the dashboard, since she has two", page.url.endswith("/dashboard"))
+        check("the home page stays, offering My calendars (the dashboard), since she has two", page.url.rstrip("/") == BASE
+              and await page.get_attribute("#topMyCalBtn", "href") == "/dashboard" and (await page.text_content("#topMyCalBtn")).strip() == "My calendars")
+        await page.click("#profileBtn"); await page.wait_for_timeout(100)
+        items = await page.evaluate("[...document.querySelectorAll('#profileDropdown .menu-item')].filter(e => !e.classList.contains('hidden')).map(e => e.textContent.trim())")
+        check("and its profile menu offers her main calendar instead", items == ["My calendar", "Change password", "Sign out"]
+              and await page.get_attribute("#myCalendarLink", "href") == "/maya-chen", str(items))
 
         # ---- the second calendar is hers, and gets a block
         await page.goto(BASE + "/piano-lessons", wait_until="networkidle"); await page.wait_for_timeout(600)
@@ -115,6 +120,11 @@ async def main():
         await master.click("#profileBtn"); await master.wait_for_timeout(200)
         check("with Admin view in the menu, and the role Admin", not await hidden(master, "#accountsLink") and (await master.text_content("#accountsLink")).strip() == "Admin view"
               and await master.text_content("#profileMenuMode") == "Admin")
+        await master.goto(BASE + "/", wait_until="networkidle"); await master.wait_for_timeout(800)
+        await master.click("#profileBtn"); await master.wait_for_timeout(100)
+        items = await master.evaluate("[...document.querySelectorAll('#profileDropdown .menu-item')].filter(e => !e.classList.contains('hidden')).map(e => e.textContent.trim())")
+        check("on the home page the master's menu is the same, Admin view included", items == ["My calendar", "Admin view", "Change password", "Sign out"]
+              and await master.text_content("#profileMenuMode") == "Admin" and await master.get_attribute("#topMyCalBtn", "href") == "/dashboard", str(items))
 
         # ---- deleting a calendar
         await page.goto(BASE + "/dashboard", wait_until="networkidle"); await page.wait_for_timeout(600)

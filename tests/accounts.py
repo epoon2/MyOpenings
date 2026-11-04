@@ -153,9 +153,48 @@ async def main():
               and await page.is_editable("#forgotEmail") and (await page.text_content("#forgotSubmit")).strip() == "Send it again")
         check("the reset email went out", any("Reset" in m["subject"] for m in sent_mail()))
 
-        # ---- the home page sends a signed-in person to their calendar
+        # ---- the home page stays the home page for a signed-in person, with the way to their calendar
         await page.goto(BASE + "/", wait_until="networkidle"); await page.wait_for_timeout(800)
-        check("the home page goes straight to the calendar when signed in", page.url.endswith("/maya"))
+        check("the home page no longer sends a signed-in person away", page.url.rstrip("/") == BASE, page.url)
+        check("My calendar (to /maya) and the profile chip replace Log in and Sign up",
+              await page.get_attribute("#topMyCalBtn", "href") == "/maya" and not await hidden(page, "#topMyCalBtn")
+              and not await hidden(page, "#profileMenu") and await hidden(page, "#topLoginBtn") and await hidden(page, "#topSignupBtn")
+              and not await hidden(page, "#heroMyCalBtn") and await hidden(page, "#heroSignupBtn"))
+        check("the chip carries her name, at the far right with My calendar just left of it",
+              await page.text_content("#profileName") == "Maya Chen" and await page.text_content("#profileInitial") == "M"
+              and await page.evaluate("""() => { const b = document.getElementById('topMyCalBtn').getBoundingClientRect();
+                  const c = document.getElementById('profileBtn').getBoundingClientRect();
+                  return b.right <= c.left && document.querySelector('.home-top-actions').lastElementChild.id === 'profileMenu'; }"""))
+        check("with no separate Sign out button and no underline on My calendar",
+              await page.evaluate("!document.getElementById('topSignOutBtn')")
+              and await page.evaluate("getComputedStyle(document.getElementById('topMyCalBtn')).textDecorationLine") == "none")
+        await page.click("#profileBtn"); await page.wait_for_timeout(100)
+        items = await page.evaluate("[...document.querySelectorAll('#profileDropdown .menu-item')].filter(e => !e.classList.contains('hidden')).map(e => e.textContent.trim())")
+        check("its menu: My calendars, Change password, Sign out (no Home page here)", items == ["My calendars", "Change password", "Sign out"], str(items))
+        check("named for her as Owner", await page.text_content("#profileMenuName") == "Maya Chen" and await page.text_content("#profileMenuMode") == "Owner")
+        await page.click("h1"); await page.wait_for_timeout(100)
+        check("a click elsewhere closes it", await hidden(page, "#profileDropdown"))
+        await page.click("#profileBtn"); await page.wait_for_timeout(100)
+        await page.click("#changePasswordBtn"); await page.wait_for_timeout(300)
+        check("Change password opens here too", not await hidden(page, "#passwordPanel") and await hidden(page, "#profileDropdown"))
+        await page.fill("#currentPassword", "wrong-pass"); await page.fill("#newPassword", "maya-pass-4"); await page.fill("#newPasswordAgain", "maya-pass-4")
+        await page.click("#passwordSubmit"); await page.wait_for_timeout(500)
+        check("a wrong current password is refused, without signing her out", "not right" in (await page.text_content("#passwordError"))
+              and await page.evaluate("!!localStorage.getItem('calendarSession')"))
+        await page.fill("#currentPassword", "maya-pass-2"); await page.fill("#newPasswordAgain", "maya-pass-5")
+        await page.click("#passwordSubmit"); await page.wait_for_timeout(300)
+        check("the new one must match", "do not match" in (await page.text_content("#passwordError")))
+        await page.fill("#newPasswordAgain", "maya-pass-4")
+        await page.click("#passwordSubmit"); await page.wait_for_timeout(800)
+        check("then it changes", not await hidden(page, "#passwordDone") and await hidden(page, "#passwordSubmit"))
+        await page.keyboard.press("Escape")
+        await page.reload(wait_until="networkidle"); await page.wait_for_timeout(800)
+        check("and she stays signed in", not await hidden(page, "#profileMenu") and await hidden(page, "#topLoginBtn"))
+        await page.click("#topMyCalBtn"); await page.wait_for_load_state("networkidle"); await page.wait_for_timeout(600)
+        check("which opens the calendar, still signed in", page.url.endswith("/maya") and not await hidden(page, "#adminBanner"))
+        await page.click("#profileBtn"); await page.wait_for_timeout(100)
+        check("and the profile menu leads back to the home page", not await hidden(page, "#homePageLink") and await page.get_attribute("#homePageLink", "href") == "/")
+        await page.click("#portalTitle")
 
         # ---- someone else's calendar
         await page.goto(BASE + "/ethan", wait_until="networkidle"); await page.wait_for_timeout(600)
@@ -195,7 +234,14 @@ async def main():
               and await page.evaluate("[...document.querySelectorAll('.event-card')].length") >= 0 and await page.text_content("#portalTitle") == "Ethan's Tutoring Availability")
         events = await page.evaluate("fetch('/api/events?start=2031-01-04&end=2031-01-10&calendar=ethan', { headers: { 'x-session': JSON.parse(localStorage.getItem('calendarSession')).token } }).then(r => r.json()).then(d => d.events.map(e => e.title))")
         check("including the block saved with the admin password", events == ["Noah"], str(events))
-        await page.goto(BASE + "/", wait_until="networkidle"); await page.wait_for_timeout(500)
+        await page.goto(BASE + "/", wait_until="networkidle"); await page.wait_for_timeout(800)
+        await page.click("#profileBtn"); await page.wait_for_timeout(100)
+        items = await page.evaluate("[...document.querySelectorAll('#profileDropdown .menu-item')].filter(e => !e.classList.contains('hidden')).map(e => e.textContent.trim())")
+        check("back on the home page the profile menu is there", items == ["My calendars", "Change password", "Sign out"], str(items))
+        await page.click("#signOutBtn"); await page.wait_for_load_state("networkidle"); await page.wait_for_timeout(600)
+        check("Sign out in that menu signs out and stays on the home page", page.url.rstrip("/") == BASE and await hidden(page, "#profileMenu")
+              and not await hidden(page, "#topLoginBtn") and await hidden(page, "#topMyCalBtn")
+              and await page.evaluate("!localStorage.getItem('calendarSession') && !sessionStorage.getItem('calendarSession')"))
         await page.goto(BASE + "/?signup", wait_until="networkidle"); await page.wait_for_timeout(400)
         check("once claimed, the take-over box is gone from sign-up", await hidden(page, "#claimRow"))
 
