@@ -92,6 +92,7 @@
 
     .home-top-actions .btn {
       white-space: nowrap;
+      text-decoration: none;
     }
 
     .home {
@@ -1098,6 +1099,53 @@
       }
     }
 
+    /*
+      On a phone the top bar keeps to one line: the logo alone, a
+      narrower language list and tighter buttons.
+    */
+    @media (max-width: 560px) {
+      .home-top-inner {
+        gap: 10px;
+        padding: 10px 16px;
+      }
+
+      .home-brand span {
+        display: none;
+      }
+
+      .home-top-actions {
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .home-top-actions .lang-select {
+        max-width: 88px;
+      }
+
+      .home-top-actions .btn {
+        padding: 8px 10px;
+        font-size: 14px;
+      }
+    }
+
+    /*
+      Narrower still: Sign up gives way to Log in (the page itself
+      offers Create your calendar twice), and the light/dark switch
+      to the buttons that matter - the page follows the phone's own
+      setting without it.
+    */
+    @media (max-width: 420px) {
+      #topSignupBtn {
+        display: none;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .home-top-actions .theme-btn {
+        display: none;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .tile,
       .chip,
@@ -1608,6 +1656,25 @@
         </button>
         <button id="topLoginBtn" class="btn secondary" type="button" data-i18n="auth_login">Log in</button>
         <button id="topSignupBtn" class="btn primary" type="button" data-i18n="auth_signup">Sign up</button>
+        <!-- Signed in: the way to your calendar(s), then the same profile menu as the calendar page -->
+        <a id="topMyCalBtn" class="btn primary hidden" href="/dashboard" data-i18n="my_calendar">My calendar</a>
+        <div id="profileMenu" class="profile hidden">
+          <button id="profileBtn" class="profile-chip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account">
+            <span id="profileInitial" class="profile-initial"></span>
+            <span id="profileName" class="profile-name"></span>
+          </button>
+          <div id="profileDropdown" class="profile-dropdown hidden" role="menu">
+            <div class="profile-dropdown-head">
+              <strong id="profileMenuName"></strong>
+              <span id="profileMenuMode"></span>
+            </div>
+            <a id="myCalendarLink" class="menu-item hidden" role="menuitem" href="/" data-i18n="my_calendar">My calendar</a>
+            <a id="dashboardLink" class="menu-item hidden" role="menuitem" href="/dashboard" data-i18n="my_calendars">My calendars</a>
+            <a id="accountsLink" class="menu-item hidden" role="menuitem" href="/dashboard#accounts" data-i18n="all_accounts">All accounts</a>
+            <button id="changePasswordBtn" class="menu-item" type="button" role="menuitem" data-i18n="change_password">Change password</button>
+            <button id="signOutBtn" class="menu-item" type="button" role="menuitem" data-i18n="sign_out">Sign out</button>
+          </div>
+        </div>
       </div>
     </div>
   </header>
@@ -1625,6 +1692,7 @@
         <div class="home-cta hero-in" style="--d: 240ms">
           <button id="heroSignupBtn" class="btn primary" type="button" data-i18n="home_cta_signup">Create your calendar</button>
           <button id="heroLoginBtn" class="btn secondary" type="button" data-i18n="home_cta_login">Log in</button>
+          <a id="heroMyCalBtn" class="btn primary hidden" href="/dashboard" data-i18n="my_calendar">My calendar</a>
         </div>
         <p class="home-free hero-in" style="--d: 360ms"><span data-i18n="home_free">Free. No app to install. Works on any device.</span> <a id="heroDemo" class="home-demo hidden" href="/demo" data-i18n="home_demo">See an example calendar</a></p>
       </div>
@@ -1930,6 +1998,26 @@
         <button id="resetSubmit" class="btn primary" type="submit" data-i18n="auth_save_login">Save and log in</button>
       </form>
 
+      <!-- CHANGE PASSWORD (signed in, from the profile menu) -->
+      <form id="passwordPanel" class="auth-panel hidden" novalidate>
+        <h2 data-i18n="cp_title">Change password</h2>
+        <label class="field">
+          <span data-i18n="cp_current">Current password</span>
+          <input id="currentPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="field">
+          <span><span data-i18n="cp_new">New password</span> <small data-i18n="cp_new_hint">8 characters or more</small></span>
+          <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label class="field">
+          <span data-i18n="cp_confirm">Repeat the new password</span>
+          <input id="newPasswordAgain" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <div id="passwordError" class="form-error"></div>
+        <div id="passwordDone" class="auth-ok hidden" data-i18n="cp_done">Password changed. Other devices are signed out.</div>
+        <button id="passwordSubmit" class="btn primary" type="submit" data-i18n="cp_save">Change password</button>
+      </form>
+
       <!-- VERIFYING (from the email link) -->
       <div id="verifyPanel" class="auth-panel hidden">
         <h2 id="verifyTitle" data-i18n="auth_verifying">Confirming your email…</h2>
@@ -2124,7 +2212,7 @@
 
       /* ---------- the dialog and its panels ---------- */
 
-      var PANELS = ['loginPanel', 'signupPanel', 'forgotPanel', 'resetPanel', 'verifyPanel', 'welcomePanel'];
+      var PANELS = ['loginPanel', 'signupPanel', 'forgotPanel', 'resetPanel', 'passwordPanel', 'verifyPanel', 'welcomePanel'];
 
       function show(panel) {
         PANELS.forEach(function (id) { $(id).classList.toggle('hidden', id !== panel); });
@@ -2159,7 +2247,24 @@
         if (event.target === $('authModal')) closeDialog();
       });
       document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') closeDialog();
+        if (event.key === 'Escape') { closeDialog(); closeProfileMenu(); }
+      });
+
+      /* ---------- the profile menu (signed in) ---------- */
+
+      function closeProfileMenu() {
+        $('profileDropdown').classList.add('hidden');
+        $('profileBtn').setAttribute('aria-expanded', 'false');
+      }
+
+      $('profileBtn').addEventListener('click', function (event) {
+        event.stopPropagation();
+        var open = $('profileDropdown').classList.contains('hidden');
+        $('profileDropdown').classList.toggle('hidden', !open);
+        $('profileBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('click', function (event) {
+        if (!$('profileMenu').contains(event.target)) closeProfileMenu();
       });
 
       /* ---------- the API ---------- */
@@ -2367,22 +2472,86 @@
       }
 
       /*
-        Already signed in: straight to the calendar. The session is
-        checked first, so a stale one lands here rather than in a loop.
+        Already signed in: stay on the home page, but swap Log in and
+        Sign up for the way to your calendar and a Sign out. The
+        session is checked first; a stale one is simply forgotten.
+        One calendar: My calendar opens it. More than one, or the
+        site's owner: My calendars opens the dashboard that lists them.
       */
       var session = window.CalendarSession.read();
       if (session) {
         call('/me', undefined, session).then(function (data) {
-          /*
-            One calendar: straight to it. More than one, or the site's
-            owner: the dashboard that lists them.
-          */
           var many = (data.calendars || []).length > 1 || data.account.master;
-          window.location.replace(many ? '/dashboard' : '/' + data.account.slug);
+          var key = many ? 'my_calendars' : 'my_calendar';
+          var href = many ? '/dashboard' : '/' + data.account.slug;
+          ['topMyCalBtn', 'heroMyCalBtn'].forEach(function (id) {
+            $(id).href = href;
+            $(id).setAttribute('data-i18n', key);
+            $(id).classList.remove('hidden');
+          });
+          /*
+            The profile chip, as on the calendar page. Its menu offers
+            whichever of the main calendar and the dashboard the button
+            beside it does not.
+          */
+          var name = (data.account.displayName || data.account.email || '?').trim() || '?';
+          $('profileInitial').textContent = name.charAt(0).toUpperCase();
+          $('profileName').textContent = name;
+          $('profileMenuName').textContent = name;
+          $('profileMenuMode').setAttribute('data-i18n', data.account.master ? 'role_admin' : 'role_owner');
+          $('myCalendarLink').href = '/' + data.account.slug;
+          $('myCalendarLink').classList.toggle('hidden', !many);
+          $('dashboardLink').classList.toggle('hidden', many);
+          $('accountsLink').classList.toggle('hidden', !data.account.master);
+          $('profileMenu').classList.remove('hidden');
+          ['topLoginBtn', 'topSignupBtn', 'heroSignupBtn', 'heroLoginBtn'].forEach(function (id) {
+            $(id).classList.add('hidden');
+          });
+          window.I18N.apply();
         }).catch(function (error) {
           if (error.status === 401) window.CalendarSession.clear();
         });
       }
+
+      $('signOutBtn').addEventListener('click', function () {
+        window.CalendarSession.clear();
+        try { localStorage.removeItem('adminDeviceToken'); } catch (e) { /* nothing stored */ }
+        window.location.href = '/';
+      });
+
+      /* ---------- change password (signed in) ---------- */
+
+      $('changePasswordBtn').addEventListener('click', function () {
+        closeProfileMenu();
+        ['currentPassword', 'newPassword', 'newPasswordAgain'].forEach(function (id) { $(id).value = ''; });
+        $('passwordError').textContent = '';
+        $('passwordDone').classList.add('hidden');
+        $('passwordSubmit').classList.remove('hidden');
+        show('passwordPanel');
+      });
+      $('passwordPanel').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var current = $('currentPassword').value;
+        var next = $('newPassword').value;
+        $('passwordError').textContent = '';
+        if (next.length < 8) { $('passwordError').textContent = t('auth_need_pw'); return; }
+        if (next !== $('newPasswordAgain').value) { $('passwordError').textContent = t('cp_mismatch'); return; }
+        var held = window.CalendarSession.read();
+        if (!held) { show('loginPanel'); return; }
+        var remembered = true;
+        try { remembered = Boolean(localStorage.getItem('calendarSession')); } catch (e) { remembered = true; }
+        busy($('passwordSubmit'), true);
+        call('/account/password', { current: current, password: next }, held).then(function (data) {
+          window.CalendarSession.save({ token: data.token, expiresAt: data.expiresAt, slug: data.account.slug }, remembered);
+          ['currentPassword', 'newPassword', 'newPasswordAgain'].forEach(function (id) { $(id).value = ''; });
+          $('passwordDone').classList.remove('hidden');
+          $('passwordSubmit').classList.add('hidden');
+        }).catch(function (error) {
+          $('passwordError').textContent = error.message;
+        }).then(function () {
+          busy($('passwordSubmit'), false);
+        });
+      });
 
     })();
   </script>
