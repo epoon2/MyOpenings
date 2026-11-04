@@ -66,10 +66,10 @@ async def main():
         check("a save works while signed in by token", await page.locator(".event-card").count() == 1)
 
         # ---- Public view keeps the device; Admin is one click
-        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(500)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(500)
         check("Public view shows the public page", not await is_admin(page))
         check("but the device is still remembered", await stored(page) is not None)
-        await page.evaluate("document.getElementById('backToAdminBtn').click()"); await page.wait_for_timeout(700)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(700)
         check("Back to admin comes straight back without a password", await is_admin(page)
               and await page.evaluate("document.getElementById('loginModal').classList.contains('hidden')"))
 

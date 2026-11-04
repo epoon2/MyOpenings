@@ -51,7 +51,7 @@ async def main():
             await post({ type: 'AVAILABLE', title: 'Office hours', start: cols[3] + 'T08:00', end: cols[3] + 'T13:00',
                 recurrence: { frequency: 'WEEKLY', interval: 1, weekdays: [3], endType: 'NEVER' } });
             await post({ type: 'BLOCKED', title: 'Kai - piano', start: cols[3] + 'T09:30', end: cols[3] + 'T11:00' }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
         seen = await cards(page)
         check("the open block is drawn in two pieces around the booking", "Open 8 – 9:30 AM" in seen and "Open 11 AM – 1 PM" in seen, str(seen))
 

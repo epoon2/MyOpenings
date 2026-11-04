@@ -96,7 +96,7 @@ async def main():
 
         # Public view must not show it
         await page.click("#prevWeekBtn"); await page.wait_for_timeout(500)
-        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(700)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(700)
         check("summary hidden in public view",
               await page.evaluate("document.getElementById('weekSummary').classList.contains('hidden')"))
 

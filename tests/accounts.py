@@ -113,13 +113,13 @@ async def main():
             const post = (body) => fetch('/api/events?calendar=maya', { method: 'POST', headers: {'Content-Type': 'application/json', 'x-session': token}, body: JSON.stringify(body) });
             await post({ type: 'AVAILABLE', title: 'Available', start: wed + 'T09:00', end: wed + 'T12:00' });
             await post({ type: 'BLOCKED', title: 'Leo - algebra', start: wed + 'T10:00', end: wed + 'T11:00' }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
         check("the owner sees the student's name", "Leo - algebra" in (await page.text_content("#calendar")))
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(900)
+        await page.click("#modeToggle"); await page.wait_for_timeout(900)
         check("Public view, still signed in, shows the visitor's calendar: no name, the block just booked", await hidden(page, "#adminBanner")
               and "Leo - algebra" not in (await page.text_content("#calendar")) and await page.evaluate("document.querySelectorAll('.event-card').length") >= 2
               and not await hidden(page, "#profileMenu"), await page.text_content("#calendar"))
-        await page.click("#backToAdminBtn"); await page.wait_for_timeout(900)
+        await page.click("#modeToggle"); await page.wait_for_timeout(900)
         check("Edit view brings the name back without a password", "Leo - algebra" in (await page.text_content("#calendar")) and await hidden(page, "#loginModal"))
         await page.click("#todayBtn"); await page.wait_for_timeout(500)
 
@@ -159,7 +159,7 @@ async def main():
 
         # ---- someone else's calendar
         await page.goto(BASE + "/ethan", wait_until="networkidle"); await page.wait_for_timeout(600)
-        check("on another calendar a signed-in person is a visitor", await hidden(page, "#adminBanner") and await hidden(page, "#modeSwitch") and await hidden(page, "#adminBtn"))
+        check("on another calendar a signed-in person is a visitor", await hidden(page, "#adminBanner") and await hidden(page, "#modeToggle") and await hidden(page, "#adminBtn"))
         check("with the chip showing their own name", await page.text_content("#profileName") == "Maya Chen")
         await page.click("#profileBtn"); await page.wait_for_timeout(100)
         check("and a way home in the menu, no gear here", not await hidden(page, "#myCalendarLink") and (await page.get_attribute("#myCalendarLink", "href")) == "/maya" and await hidden(page, "#toolsMenuWrap"))

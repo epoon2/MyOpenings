@@ -50,7 +50,7 @@ async def main():
             const dow = new Date(cols[6] + 'T12:00').getDay();
             await post({ type: 'BLOCKED', title: 'Leo - SAT prep', start: cols[6] + 'T09:00', end: cols[6] + 'T09:30', category: 'tutor', notes: 'Bring the practice test; his dad waits in the lot.',
                          recurrence: { frequency: 'WEEKLY', interval: 2, weekdays: [dow], endType: 'COUNT', count: 6 } }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
 
         before = await page.evaluate(MEASURE, "Maya")
         check("at rest a fifteen-minute card is one short row that clips its title", before["height"] < 24 and before["clipped"] and not before["rows"], str(before))

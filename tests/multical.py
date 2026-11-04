@@ -111,7 +111,7 @@ async def main():
               and "Site owner" in await master.text_content("#accountsBody"))
         await master.click("#accountsBody a[href='/maya-chen']"); await master.wait_for_load_state("networkidle"); await master.wait_for_timeout(800)
         check("opening someone's calendar from there is admin mode for the master", master.url.endswith("/maya-chen") and not await hidden(master, "#adminBanner")
-              and not await hidden(master, "#modeSwitch"))
+              and not await hidden(master, "#modeToggle"))
         await master.click("#profileBtn"); await master.wait_for_timeout(200)
         check("with Admin view in the menu, and the role Admin", not await hidden(master, "#accountsLink") and (await master.text_content("#accountsLink")).strip() == "Admin view"
               and await master.text_content("#profileMenuMode") == "Admin")

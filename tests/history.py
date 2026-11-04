@@ -137,7 +137,7 @@ async def main():
               str([r["when"] for r in rows[:2]]))
 
         await page.click("#closeHistoryDrawerBtn"); await page.wait_for_timeout(300)
-        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(400)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(400)
         check("leaving admin hides the gear menu that holds Version history",
               await page.evaluate("document.getElementById('toolsMenuWrap').classList.contains('hidden')"))
 

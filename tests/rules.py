@@ -72,7 +72,7 @@ async def main():
         check("the rules save", (await page.text_content("#status")).startswith("Settings saved"), await page.text_content("#status"))
 
         # ---- a visitor sees the wording and the rules, and the server holds them
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(600)
+        await page.click("#modeToggle"); await page.wait_for_timeout(600)
         await page.click("#requestBtn"); await page.wait_for_timeout(300)
         check("the form carries the owner's introduction", (await page.text_content("#requestIntro")).startswith("Tell me what you'd like"))
         rules = await page.text_content("#requestRules")

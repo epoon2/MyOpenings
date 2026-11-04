@@ -170,7 +170,7 @@ async def main():
         await page.click("[data-close='eventModal']"); await page.wait_for_timeout(300)
 
         # ---- exit admin: buttons go
-        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(400)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(400)
         check("leaving admin hides Undo and Redo", not (await buttons(page))["shown"])
 
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]

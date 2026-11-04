@@ -89,7 +89,7 @@ async def main():
             text = await page.text_content("#syncNoticeText")
             check("Sync now against a Google that still refuses says so, with the reason",
                   await visible(page, "#syncNotice") and "did not finish" in text and "401" in text, text)
-            await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(400)
+            await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(400)
             check("leaving admin hides the notice and the button",
                   not await visible(page, "#syncNotice") and not await visible(page, "#googleSyncBtn"))
         finally:

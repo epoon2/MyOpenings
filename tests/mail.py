@@ -62,7 +62,7 @@ async def scenario(pw, mode):
                   and "could not be sent" in await page.text_content("#mailNoticeText"), await page.text_content("#mailNoticeText"))
             await page.click("#mailNoticeCloseBtn"); await page.wait_for_timeout(200)
             check("Dismiss hides it", await page.evaluate("document.getElementById('mailNotice').classList.contains('hidden')"))
-            await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(600)
+            await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(600)
             check("the public page never shows it", await page.evaluate("document.getElementById('mailNotice').classList.contains('hidden')"))
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]
         check(f"no page errors ({mode})", not real, str(real[:3]))

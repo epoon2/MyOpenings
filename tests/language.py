@@ -80,7 +80,7 @@ async def main():
         check("the log-in dialog (admin password, first calendar) is in French", await text(page, "#loginTitle") == "Accès admin" and await text(page, "#loginSubmitBtn") == "Entrer en mode admin")
         await page.fill("#adminPasswordInput", "t"); await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
         check("so are the admin banner, toolbar and switch", "Comment modifier" in await text(page, "#adminBanner") and await text(page, "#addBtn") == "+ Ajouter un événement"
-              and await text(page, "#backToAdminBtn") == "Vue édition" and await text(page, "#historyBtn") == "Historique des versions", (await text(page, "#adminBanner"))[:40] + " | " + await text(page, "#backToAdminBtn"))
+              and await text(page, "#modeToggleLabel") == "Vue édition" and await text(page, "#historyBtn") == "Historique des versions", (await text(page, "#adminBanner"))[:40] + " | " + await text(page, "#modeToggleLabel"))
         check("and the weekly summary", await text(page, "#summaryHoursLabel") == "heures occupées cette semaine")
         await page.click("#profileBtn"); await page.wait_for_timeout(100)
         check("and the profile menu, with the role", await text(page, "#signOutBtn") == "Se déconnecter" and await text(page, "#profileMenuMode") == "Admin", await text(page, "#profileMenuMode"))

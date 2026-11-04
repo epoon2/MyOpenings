@@ -34,7 +34,7 @@ async def main():
         check("a visitor sees Log in, no chip", not await hidden(page, "#adminBtn") and (await page.text_content("#adminBtn")).strip() == "Log in" and await hidden(page, "#profileMenu"))
         check("the banner carries no buttons, only how to edit", await page.evaluate("document.querySelectorAll('#adminBanner button').length") == 0
               and "How to edit" in (await page.text_content("#adminBanner")))
-        check("a visitor sees no Edit/Public switch and no gear", await hidden(page, "#modeSwitch") and await hidden(page, "#toolsMenuWrap"))
+        check("a visitor sees no Edit/Public switch and no gear", await hidden(page, "#modeToggle") and await hidden(page, "#toolsMenuWrap"))
 
         await page.click("#adminBtn"); await page.fill("#adminPasswordInput", "t")
         await page.click("#loginSubmitBtn"); await page.wait_for_timeout(700)
@@ -44,10 +44,14 @@ async def main():
         await page.click("#profileBtn"); await page.wait_for_timeout(200)
         check("clicking the chip opens the menu", not await hidden(page, "#profileDropdown") and await page.evaluate("document.getElementById('profileBtn').getAttribute('aria-expanded')") == "true")
         check("the menu offers Sign out, not Settings", await menu_items(page) == ["Sign out"], str(await menu_items(page)))
-        check("the Edit view / Public view switch is in the header, Edit pressed", not await hidden(page, "#modeSwitch")
-              and await page.evaluate("document.getElementById('modeSwitch').closest('header, .app-header, .topbar') !== null")
-              and await page.evaluate("document.getElementById('backToAdminBtn').getAttribute('aria-pressed')") == "true"
-              and await page.evaluate("document.getElementById('exitAdminBtn').getAttribute('aria-pressed')") == "false")
+        check("the padlock is on the calendar toolbar, open, reading Edit view", not await hidden(page, "#modeToggle")
+              and await page.evaluate("document.getElementById('modeToggle').closest('.calendar-toolbar') !== null")
+              and await page.evaluate("document.getElementById('modeToggle').getAttribute('aria-pressed')") == "true"
+              and not await page.evaluate("document.getElementById('modeToggle').classList.contains('locked')")
+              and (await page.text_content("#modeToggleLabel")).strip() == "Edit view")
+        check("the logo and the profile share the bar at the top", await page.evaluate("document.querySelector('.sitebar .site-brand').getAttribute('href')") == "/"
+              and await page.evaluate("document.getElementById('profileMenu').closest('.sitebar') !== null"))
+        check("there is no Refresh button", await page.evaluate("document.getElementById('refreshBtn') === null"))
         check("and the menu names the role, Admin", await page.text_content("#profileMenuMode") == "Admin", await page.text_content("#profileMenuMode"))
         check("the gear is on the toolbar, its menu closed", not await hidden(page, "#toolsMenuWrap") and await hidden(page, "#toolsMenu"))
         await page.click("#portalTitle"); await page.wait_for_timeout(100)
@@ -72,20 +76,22 @@ async def main():
                 body: JSON.stringify({ type: 'AVAILABLE', title: 'Available', start: wed + 'T09:00', end: wed + 'T12:00' }) });
             await fetch('/api/events', { method: 'POST', headers: {'Content-Type': 'application/json', 'x-admin-password': 't'},
                 body: JSON.stringify({ type: 'BLOCKED', title: 'Kai - piano', start: wed + 'T10:00', end: wed + 'T11:00' }) }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
         check("in Edit view a booked block carries the student's name", "Kai - piano" in (await page.text_content("#calendar")))
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(900)
+        await page.click("#modeToggle"); await page.wait_for_timeout(900)
         check("Public view shows the public page, gear gone", await hidden(page, "#adminBanner") and await hidden(page, "#toolsMenuWrap"))
         check("and really is what a visitor sees: the name is gone, the block is just booked", "Kai - piano" not in (await page.text_content("#calendar"))
               and await page.evaluate("document.querySelectorAll('.event-card').length") >= 2, await page.text_content("#calendar"))
-        check("the switch stays, now with Public pressed", not await hidden(page, "#modeSwitch")
-              and await page.evaluate("document.getElementById('exitAdminBtn').getAttribute('aria-pressed')") == "true")
+        check("the padlock stays, now closed and reading Public view", not await hidden(page, "#modeToggle")
+              and await page.evaluate("document.getElementById('modeToggle').getAttribute('aria-pressed')") == "false"
+              and await page.evaluate("document.getElementById('modeToggle').classList.contains('locked')")
+              and (await page.text_content("#modeToggleLabel")).strip() == "Public view")
         check("and the chip stays, because the device is remembered", not await hidden(page, "#profileMenu") and await hidden(page, "#adminBtn"))
         await page.click("#profileBtn"); await page.wait_for_timeout(200)
         check("the menu now offers Sign out only", await menu_items(page) == ["Sign out"], str(await menu_items(page)))
         check("and says Public view", await page.text_content("#profileMenuMode") == "Public view")
         await page.click("#portalTitle"); await page.wait_for_timeout(100)
-        await page.click("#backToAdminBtn"); await page.wait_for_timeout(900)
+        await page.click("#modeToggle"); await page.wait_for_timeout(900)
         check("Edit view returns without a password, names back", not await hidden(page, "#adminBanner") and await hidden(page, "#loginModal")
               and "Kai - piano" in (await page.text_content("#calendar")))
 
@@ -110,8 +116,8 @@ async def main():
         await page.click("#profileBtn"); await page.wait_for_timeout(100)
         check("its menu offers Sign out, and the gear is back", await menu_items(page) == ["Sign out"] and not await hidden(page, "#toolsMenuWrap"))
         await page.click("#portalTitle"); await page.wait_for_timeout(100)
-        await page.click("#exitAdminBtn"); await page.wait_for_timeout(700)
-        check("Public view without a remembered device is a plain Log in again, switch gone", not await hidden(page, "#adminBtn") and await hidden(page, "#profileMenu") and await hidden(page, "#modeSwitch"))
+        await page.click("#modeToggle"); await page.wait_for_timeout(700)
+        check("Public view without a remembered device is a plain Log in again, switch gone", not await hidden(page, "#adminBtn") and await hidden(page, "#profileMenu") and await hidden(page, "#modeToggle"))
 
         real = [e for e in errs if "fonts" not in e and "favicon" not in e]
         check("no page errors", not real, str(real[:3]))

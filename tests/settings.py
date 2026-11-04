@@ -110,7 +110,7 @@ async def main():
         await page.click("#settingsModal [data-close]"); await page.wait_for_timeout(200)
 
         # ---- the public page sees everything but the address
-        await page.evaluate("document.getElementById('exitAdminBtn').click()"); await page.wait_for_timeout(700)
+        await page.evaluate("document.getElementById('modeToggle').click()"); await page.wait_for_timeout(700)
         check("visitors see the new title, hours, words and colours", await page.text_content("#portalTitle") == "Maya's Piano Lessons"
               and await page.text_content("#legendBlocked") == "Lesson" and await css_var(page, "--blocked") == "#6d28d9"
               and (await page.evaluate("[...document.querySelectorAll('.time-label')].map(l => l.textContent)"))[0] == "9 AM")

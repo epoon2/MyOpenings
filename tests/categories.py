@@ -47,7 +47,7 @@ async def main():
             await post({ type: 'BLOCKED', title: 'Office - team meeting', start: cols[2] + 'T09:00', end: cols[2] + 'T11:00' });
             await post({ type: 'BLOCKED', title: 'Kai - piano', start: cols[3] + 'T15:00', end: cols[3] + 'T15:30' });
             await post({ type: 'AVAILABLE', title: 'Open', start: cols[4] + 'T13:00', end: cols[4] + 'T15:00' }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
         check("with no categories the summary shows only the total", await page.text_content("#summaryHours") == "3.5" and await hidden(page, "#summaryCategories"))
         await page.click(".event-card"); await page.wait_for_timeout(400)
         check("and the editor asks for none", await hidden(page, "#categoryField"))
@@ -114,7 +114,7 @@ async def main():
             const ev = (await fetch('/api/events?start=2020-01-01&end=2030-01-01', { headers: { 'x-admin-password': 't' } }).then(r => r.json())).events.find(e => e.title.includes('Kai'));
             await fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-password': 't' },
                 body: JSON.stringify({ id: ev.id, type: ev.type, title: ev.title, start: ev.start, end: ev.end.replace('15:30', '16:00'), notes: ev.notes }) }); }""")
-        await page.evaluate("document.getElementById('refreshBtn').click()"); await page.wait_for_timeout(800)
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))"); await page.wait_for_timeout(800)
         check("a save without the field keeps the category", await chips(page) == ["4 h · All", "2 h · Work", "2 h · Private tutoring"], str(await chips(page)))
 
         # ---- renaming keeps the sessions; removing files them under none
