@@ -3681,3 +3681,114 @@ body.calendar-missing .header-actions {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* -----------------------------
+   SITE BAR
+   The MyOpenings logo (to the home page) on the left; language, theme
+   and the account on the right. The calendar's own title sits below.
+----------------------------- */
+
+.sitebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  font-weight: 750;
+  font-size: 17px;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 10px;
+}
+
+.site-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.site-brand:hover span {
+  color: var(--accent);
+}
+
+.sitebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+  The title row keeps only what acts on this calendar: Request a
+  session for visitors; Requests and Blocked Sessions for the owner.
+*/
+.topbar {
+  align-items: center;
+}
+
+
+/* -----------------------------
+   EDIT VIEW / PUBLIC VIEW PADLOCK
+----------------------------- */
+
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mode-toggle .lock-closed,
+.mode-toggle.locked .lock-open {
+  display: none;
+}
+
+.mode-toggle.locked .lock-closed {
+  display: inline;
+}
+
+/* Editing reads as "open": the accent outline; public is plain. */
+.mode-toggle:not(.locked) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.calendar-toolbar #addBtn {
+  white-space: nowrap;
+}
+
+
+@media (max-width: 760px) {
+
+  .sitebar {
+    margin-bottom: 14px;
+  }
+
+  .site-brand span {
+    font-size: 16px;
+  }
+
+  /* On a phone the padlock is the icon alone; its title explains it. */
+  .mode-toggle span {
+    display: none;
+  }
+
+  .sitebar .profile-name {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+
+  .site-brand span {
+    display: none;
+  }
+}

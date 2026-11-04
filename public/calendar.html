@@ -82,42 +82,14 @@
 
   <div class="app-shell">
 
-    <header class="topbar">
-
-      <div>
-
-        <h1 id="portalTitle">
-          Ethan's Tutoring Availability
-        </h1>
-
-        <div class="subline">
-
-          <span id="timezoneLabel">
-            Pacific Time (PT)
-          </span>
-
-          <span>•</span>
-
-          <span
-            id="updatedLabel"
-            title="When the schedule itself was last changed"
-          >
-            Loading…
-          </span>
-
-          <span>•</span>
-
-          <span
-            id="checkedLabel"
-            title="When this page last fetched the schedule from the server"
-          ></span>
-
-        </div>
-
-      </div>
-
-
-      <div class="header-actions">
+    <!-- SITE BAR: the MyOpenings logo (home page) on the left; language,
+         theme and the account on the right -->
+    <nav class="sitebar" aria-label="MyOpenings">
+      <a class="site-brand" href="/" title="MyOpenings home" aria-label="MyOpenings home">
+        <img src="/icon-192.png" alt="">
+        <span>MyOpenings</span>
+      </a>
+      <div class="sitebar-actions">
         <select
           id="langSelect"
           class="lang-select"
@@ -138,92 +110,11 @@
           >☾</span>
         </button>
         <button
-          id="refreshBtn"
-          class="btn secondary"
-         data-i18n="refresh">
-          Refresh
-        </button>
-
-        <button
-          id="requestBtn"
-          class="btn primary"
-         data-i18n="request">
-          Request a session
-        </button>
-
-        <button
           id="adminBtn"
           class="btn secondary"
          data-i18n="login">
           Log in
         </button>
-
-        <button
-          id="requestsBtn"
-          class="btn secondary hidden"
-        >
-
-          <span data-i18n="admin_requests">Requests</span>
-
-          <span
-            id="requestCount"
-            class="blocked-count"
-          >
-            0
-          </span>
-
-        </button>
-
-        <button
-          id="blockedSessionsBtn"
-          class="btn secondary hidden"
-          data-i18n="admin_blocked"
-        >
-          Blocked Sessions
-        </button>
-
-        <button
-          id="googleSyncBtn"
-          class="btn secondary hidden"
-          title="Push every booked session to Google Calendar again"
-          data-i18n="admin_sync"
-        >
-          Sync Google Calendar
-        </button>
-
-        <button
-          id="addBtn"
-          class="btn primary hidden"
-          data-i18n="admin_add"
-        >
-          + Add event
-        </button>
-
-        <!-- EDIT VIEW / PUBLIC VIEW (SIGNED IN) -->
-        <div
-          id="modeSwitch"
-          class="view-switch mode-switch hidden"
-          role="group"
-          aria-label="Edit or public view"
-        >
-          <button
-            id="backToAdminBtn"
-            class="btn secondary small"
-            aria-pressed="true"
-            data-i18n="admin_view"
-          >
-            Edit view
-          </button>
-          <button
-            id="exitAdminBtn"
-            class="btn secondary small"
-            aria-pressed="false"
-            data-i18n="public_view_btn"
-          >
-            Public view
-          </button>
-        </div>
-
         <!-- PROFILE (SIGNED IN) -->
 
         <div
@@ -300,6 +191,89 @@
             </button>
           </div>
         </div>
+      </div>
+    </nav>
+
+    <header class="topbar">
+
+      <div>
+
+        <h1 id="portalTitle">
+          Ethan's Tutoring Availability
+        </h1>
+
+        <div class="subline">
+
+          <span id="timezoneLabel">
+            Pacific Time (PT)
+          </span>
+
+          <span>•</span>
+
+          <span
+            id="updatedLabel"
+            title="When the schedule itself was last changed"
+          >
+            Loading…
+          </span>
+
+          <span>•</span>
+
+          <span
+            id="checkedLabel"
+            title="When this page last fetched the schedule from the server"
+          ></span>
+
+        </div>
+
+      </div>
+
+
+      <div class="header-actions">
+
+        <button
+          id="requestBtn"
+          class="btn primary"
+         data-i18n="request">
+          Request a session
+        </button>
+
+
+        <button
+          id="requestsBtn"
+          class="btn secondary hidden"
+        >
+
+          <span data-i18n="admin_requests">Requests</span>
+
+          <span
+            id="requestCount"
+            class="blocked-count"
+          >
+            0
+          </span>
+
+        </button>
+
+        <button
+          id="blockedSessionsBtn"
+          class="btn secondary hidden"
+          data-i18n="admin_blocked"
+        >
+          Blocked Sessions
+        </button>
+
+        <button
+          id="googleSyncBtn"
+          class="btn secondary hidden"
+          title="Push every booked session to Google Calendar again"
+          data-i18n="admin_sync"
+        >
+          Sync Google Calendar
+        </button>
+
+
+
       </div>
     </header>
 
@@ -506,6 +480,25 @@
           <span id="legendBlocked">Blocked Session</span>
         </span>
       </div>
+      <!-- EDIT VIEW / PUBLIC VIEW: one padlock button for whoever owns this
+           calendar. Open padlock: editing. Closed: what visitors see. -->
+      <button
+        id="modeToggle"
+        class="btn secondary small mode-toggle hidden"
+        type="button"
+        aria-pressed="true"
+      >
+        <svg class="lock-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>
+        <svg class="lock-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span id="modeToggleLabel">Edit view</span>
+      </button>
+      <button
+        id="addBtn"
+        class="btn primary small hidden"
+        data-i18n="admin_add"
+      >
+        + Add event
+      </button>
       <div
         id="toolsMenuWrap"
         class="tools-menu-wrap hidden"

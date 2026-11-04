@@ -313,6 +313,8 @@
 
         maybeRefresh();
 
+        refreshOwnerOnReturn();
+
       }
     );
 
@@ -478,6 +480,38 @@
 
     state.lastRefresh =
       Date.now();
+
+
+    loadWeek(
+      true
+    );
+
+  }
+
+
+  /*
+    The owner's page never refreshes on a
+    timer, so an edit in progress is never
+    pulled out from under them. Coming back
+    to the tab is different: changes made on
+    another device (a phone, say) are loaded
+    then, unless a dialog or menu is open.
+    This replaced the Refresh button.
+  */
+
+  function refreshOwnerOnReturn() {
+
+    if (
+      !state.isAdmin ||
+      document.visibilityState !== 'visible' ||
+      document.querySelector(
+        '.modal-backdrop:not(.hidden), .context-menu:not(.hidden), .time-wheel:not(.hidden)'
+      )
+    ) {
+
+      return;
+
+    }
 
 
     loadWeek(
@@ -656,14 +690,6 @@
       );
 
 
-    $('refreshBtn')
-      .addEventListener(
-        'click',
-        () =>
-          loadWeek()
-      );
-
-
     $('adminBtn')
       .addEventListener(
         'click',
@@ -814,11 +840,17 @@
             );
         }
       );
-    $('backToAdminBtn')
+    /*
+      One padlock button flips between editing and the public view
+      without signing out.
+    */
+    $('modeToggle')
       .addEventListener(
         'click',
         () => {
-          if ( !state.isAdmin ) {
+          if ( state.isAdmin ) {
+            exitAdmin();
+          } else {
             $('adminBtn').click();
           }
         }
@@ -887,17 +919,6 @@
         }
       }
     );
-
-
-    $('exitAdminBtn')
-      .addEventListener(
-        'click',
-        () => {
-          if ( state.isAdmin ) {
-            exitAdmin();
-          }
-        }
-      );
 
 
     $('addBtn')
@@ -3518,16 +3539,28 @@
         !signedIn
       );
     /*
-      The Admin view / Public view switch sits on the calendar toolbar
-      whenever there is a way back: in admin mode, or on a remembered
-      device looking at the public view of its own calendar.
+      The padlock sits on the calendar toolbar whenever there is a way
+      back: in admin mode, or on a remembered device looking at the
+      public view of its own calendar. Open padlock while editing,
+      closed while showing what visitors see.
     */
-    $('modeSwitch')
+    $('modeToggle')
       .classList
       .toggle(
         'hidden',
         !( state.isAdmin || Boolean( state.adminToken ) || ownsThisCalendar() )
       );
+    $('modeToggle')
+      .classList
+      .toggle( 'locked', !state.isAdmin );
+    $('modeToggle')
+      .setAttribute( 'aria-pressed', state.isAdmin ? 'true' : 'false' );
+    $('modeToggleLabel')
+      .textContent =
+        t( state.isAdmin ? 'admin_view' : 'public_view_btn' );
+    $('modeToggle')
+      .title =
+        t( state.isAdmin ? 'mode_toggle_to_public' : 'mode_toggle_to_edit' );
     $('myCalendarLink')
       .classList
       .toggle(
@@ -3554,10 +3587,6 @@
       $('myCalendarLink').href =
         '/' + state.account.slug;
     }
-    $('backToAdminBtn')
-      .setAttribute( 'aria-pressed', state.isAdmin ? 'true' : 'false' );
-    $('exitAdminBtn')
-      .setAttribute( 'aria-pressed', state.isAdmin ? 'false' : 'true' );
     $('signOutBtn')
       .classList
       .toggle(
